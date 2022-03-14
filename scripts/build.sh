@@ -68,7 +68,8 @@ fi
 cp -r -p package build
 cp changelog.txt build/package
 cp LICENSE.txt build/package
-VERSION=$(cat build/package/FOMod/info.xml | sed -nr 's/^\s*<Version>([^<]+)<\/Version>$/\1/p')
+
+VERSION=$(cat build/package/Data/Scripts/Source/User/BadEndsFurniture/Installer.psc | sed -nr 's/^\s*String\s+Property\s+DetailedVersion\s*=\s*"([^"]+)"\s+AutoReadOnly\s*(;.*)$/\1/p')
 if [[ "$QUIET" == "" ]]
 then
   echo "  Version: $VERSION"
