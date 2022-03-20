@@ -112,7 +112,7 @@ Actor Function CloneActor(Actor akActor)
     clone.MoveTo(player, 0, 0, 2048, false)
     clone.EnableNoWait()
     clone.WaitFor3DLoad()
-    clone.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001) ; stay in positon
+    clone.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001) ; stay in positon
     clone.SetAlpha(0.0)
     clone.RemoveAllItems()
     Victims.AddRef(clone) ; for AI package
@@ -333,8 +333,6 @@ EndEvent
 
 Event OnCellDetach()
     CancelTimer(TimerFixPosition)
-    _clone.StopTranslation()
-    _clone.MoveTo(Self, DX, DY, DZ, false)
 EndEvent
 
 Int Function GetGallowsState()
@@ -345,7 +343,7 @@ Bool Function CutNoose()
     Actor player = Game.GetPlayer()
     _victim.MoveTo(player, 0.0, 0.0, 2048.0, false)
     _victim.WaitFor3DLoad()
-    _victim.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001)
+    _victim.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
     _clone.DisableNoWait()
     Utility.Wait(0.016)
     _victim.StopTranslation()
@@ -383,7 +381,7 @@ Float Function FixPosition()
         Float targetAngleZ = GetAngleZ() + DAngleZ
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
-        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 1.57, 0.0001, 0.0001)
+        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 0.0524, 0.0001, 0.0001)
     EndIf
     Return 1.0
 EndFunction
@@ -433,7 +431,7 @@ Function Advance()
         Actor player = Game.GetPlayer()
         _victim.MoveTo(player, 0.0, 0.0, 2048.0, false)
         _victim.WaitFor3DLoad()
-        _victim.TranslateTo(player.X, player.Y, player.Z + 2048.1, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001)
+        _victim.TranslateTo(player.X, player.Y, player.Z + 2048.1, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
         _clone.DisableNoWait()
         _victim.StopTranslation()
         _victim.MoveTo(Self, DX, DY, DZ, true)
@@ -499,8 +497,6 @@ EndEvent
 
 Event OnCellDetach()
     CancelTimer(TimerFixPosition)
-    _clone.StopTranslation()
-    _clone.MoveTo(Self, DX, DY, DZ, false)
 EndEvent
 
 Int Function GetGallowsState()
@@ -528,9 +524,9 @@ Float Function FixPosition()
         Float targetAngleZ = GetAngleZ() + DAngleZ
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
-        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 1.57, 0.0001, 0.0001)
+        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 0.0524, 0.0001, 0.0001)
     EndIf
-    Return 0.0 ; TODO
+    Return 1.0
 EndFunction
 
 EndState
