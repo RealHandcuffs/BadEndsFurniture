@@ -4,8 +4,9 @@
 Scriptname BadEndsFurniture:Installer extends ReferenceAlias
 
 BadEndsFurniture:SoftDependencies Property SoftDependencies Auto Const Mandatory
+Perk Property ActivationPerk Auto Const Mandatory
 
-String Property DetailedVersion = "0.1" AutoReadOnly ; user version string, will change with every new version
+String Property DetailedVersion = "0.1 alpha 1" AutoReadOnly ; user version string, will change with every new version
 String Property InstalledVersion = "" Auto
 Bool Property InstallerWorking = false Auto
 
@@ -41,5 +42,13 @@ EndEvent
 
 
 State V0
-    ; nothing to do for now
+
+Event OnBeginState(string asOldState)
+    Game.GetPlayer().AddPerk(ActivationPerk)
+EndEvent
+
+Event OnEndState(string asOldState)
+    Game.GetPlayer().RemovePerk(ActivationPerk)
+EndEvent
+
 EndState

@@ -1,18 +1,20 @@
 ;
 ; Script for Gallows.
+; This script is implemented as a state maching, the different states correspond to the progress of the hanging scene.
 ;
 Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
 Action Property ActionBleedoutStart Auto Const Mandatory
 Action Property ActionBleedoutStop Auto Const Mandatory
-Container Property InvisibleContainer Auto Const Mandatory
+Keyword Property GallowsLink Auto Const Mandatory
+BadEndsFurniture:SoftDependencies Property SoftDependencies Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 ObjectReference Property WorkshopHoldingCellMarker Auto Const Mandatory
 
 Actor _victim
-Bool _playerTeammateFlagRemoved
+Actor _clone
+Armor[] _cloneArmor
 Int _lifeIdleIndex
-ObjectReference _container
 
 ;
 ; Must be set to an array of idles that will play sequentially.
@@ -23,6 +25,11 @@ Idle[] Property LifeIdles Auto Mandatory
 ; Must contain the time for each idle in LifeIdles.
 ;
 Float[] Property LifeIdleTimes Auto Mandatory
+
+;
+; Must contain the idle to play for a dead victim.
+;
+Idle Property DeadIdle Auto Mandatory
 
 ;
 ; Offsets for the idle positions.
@@ -57,7 +64,7 @@ EndFunction
 ; This will only work if the gallows is currently empty.
 ; Returns true on success, false on error.
 ;
-Bool Function StartHangingScene(Actor akActor)
+Bool Function StartHangingScene(Actor akActor, Bool displayNotification = false)
     Return false
 EndFunction
 
@@ -76,18 +83,81 @@ EndFunction
 Function Advance()
 EndFunction
 
-; cut the noose of a victim that is not yet dead, put it into bleedout, wait, then end bleedout
-Function CutNooseOfLifeVictimAndWait(Actor akActor, Bool playerTeammateFlagRemoved, Float bleedOutTime, Action bleedoutStart, Action bleedoutStop, RefCollectionAlias vics) ; cannot be global!
-    If (playerTeammateFlagRemoved)
-        akActor.SetPlayerTeammate(true)
-    EndIf
-    akActor.StopTranslation()
-    akActor.SetRestrained(false)
+; fix position of the animated clone if necessary
+Float Function FixPosition()
+    Return 0.0
+EndFunction
+
+; play the bleedout animation for an actor
+Function PlayBleedOutAnimation(Actor akActor, Action bleedoutStart, Float bleedOutTime, Action bleedoutStop)
     akActor.PlayIdleAction(bleedoutStart)
     Utility.Wait(bleedOutTime)
     akActor.PlayIdleAction(bleedoutStop)
-    vics.RemoveRef(akActor)
     akActor.EvaluatePackage()
+EndFunction
+
+; create a visual clone of an actor
+Actor Function CloneActor(Actor akActor)
+    ActorBase leveledActorBase = akActor.GetLeveledActorBase()
+    ActorBase cloneBase = leveledActorBase.GetTemplate(true)
+    If (cloneBase == None)
+        cloneBase = leveledActorBase
+    EndIf
+    Actor player = Game.GetPlayer()
+    Actor clone = player.PlaceAtMe(cloneBase, 1, false, true, false) as Actor ; initially disabled
+    clone.RemoveFromAllFactions()
+    clone.SetValue(Game.GetAggressionAV(), 0)
+    clone.SetGhost(true)
+    clone.BlockActivation(true, true)
+    clone.MoveTo(player, 0, 0, 2048, false)
+    clone.EnableNoWait()
+    clone.WaitFor3DLoad()
+    clone.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001) ; stay in positon
+    clone.SetAlpha(0.0)
+    clone.RemoveAllItems()
+    Victims.AddRef(clone) ; for AI package
+    SoftDependencies.PrepareCloneForAnimation(akActor, clone)
+    clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
+    Return clone
+EndFunction
+
+Armor[] Function CloneWornArmor(Actor akActor, Actor clone)
+    Armor[] clonedArmor = new Armor[32]
+    Int slotIndex = 31
+    While (slotIndex >= 0)
+        Armor wornArmor = akActor.GetWornItem(slotIndex).Item as Armor
+        If (wornArmor != None)
+            ObjectReference item = clone.PlaceAtMe(wornArmor, 1, false, true, false) ; initially disabled
+            item.RemoveAllMods()
+            ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
+            Int modIndex = 0
+            While (modIndex < objectMods.Length)
+                item.AttachMod(objectMods[modIndex])
+                modIndex += 1
+            EndWhile
+            clone.AddItem(item, 1, true)
+            If (!SoftDependencies.EquipSpecialItem(_clone, item))
+                clone.EquipItem(wornArmor, true, true)
+            EndIf
+            clonedArmor[slotIndex] = wornArmor
+        EndIf
+        slotIndex -= 1
+    EndWhile
+    Return clonedArmor
+EndFunction
+
+; restore the worn armor of the clone, necessary when the cell has been loaded
+Function RestoreWornArmor(Actor akActor, Armor[] wornArmor)
+    Int slotIndex = wornArmor.Length - 1
+    While (slotIndex >= 0)
+        Armor item = wornArmor[slotIndex]
+        If (item == None)
+            akActor.UnequipItemSlot(slotIndex)
+        Else
+            akActor.EquipItem(item, true, true)
+        EndIf
+        slotIndex -= 1
+    EndWhile
 EndFunction
 
 Event OnLoad()
@@ -95,10 +165,16 @@ Event OnLoad()
 EndEvent
 
 Int Property TimerAdvance = 1 AutoReadOnly
+Int Property TimerFixPosition = 2 AutoReadOnly
 
 Event OnTimer(int aiTimerID)
     If (aiTimerID == TimerAdvance)
         Advance()
+    ElseIf (aiTimerID == TimerFixPosition)
+        Float nextInterval = FixPosition()
+        If (nextInterval > 0.0)
+            StartTimer(nextInterval, TimerFixPosition)
+        EndIf
     EndIf
 EndEvent
 
@@ -109,12 +185,20 @@ EndEvent
 State Empty
 
 Event OnBeginState(string asOldState)
-    ; setup members
-    CancelTimer(TimerAdvance) ; may do nothing
-    _victim = None
-    _playerTeammateFlagRemoved = false
+    CancelTimer(TimerAdvance)     ; may do nothing
+    CancelTimer(TimerFixPosition) ; same
+    If (_victim != None)
+        Victims.RemoveRef(_victim)
+        _victim = None
+    EndIf
+    If (_clone != None)
+        Victims.RemoveRef(_clone)
+        _clone.DisableNoWait(false)
+        _clone.Delete()
+        _clone = None
+    EndIf
     _lifeIdleIndex = 0
-    _container = None
+    BlockActivation(false)
 EndEvent
 
 Event OnLoad()
@@ -126,14 +210,15 @@ Event OnActivate(ObjectReference akActionRef)
     Actor akActor = akActionRef as Actor
     If (akActor != None)
         If (akActionRef == Game.GetPlayer())
+            BadEndsFurniture:DebugWrapper.Notification("TODO HANDLE ACTIVATE")
         ElseIf (akActor.IsDoingFavor())
-            StartHangingScene(akActor) ; player commanded NPC to interact with gallows, hang NPC
+            StartHangingScene(akActor, true) ; player commanded NPC to interact with gallows, hang NPC
         EndIf
     EndIf
 EndEvent
 
-Bool Function StartHangingScene(Actor akActor)
-    If (akActor == None || akActor == Game.GetPlayer())
+Bool Function StartHangingScene(Actor akActor, Bool displayNotification = false)
+    If (akActor == None || akActor == Game.GetPlayer()) ; TODO support player
         Return false
     EndIf
     If (_victim != None)
@@ -145,6 +230,10 @@ Bool Function StartHangingScene(Actor akActor)
         Return false
     EndIf
     Victims.AddRef(akActor)
+    BlockActivation(true, true)
+    If (displayNotification)
+        BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Preparing to hang " + _victim.GetDisplayName())
+    EndIf
     GotoState("SetupVictim")
     Return true
 EndFunction
@@ -182,12 +271,10 @@ Bool Function CutNoose()
 EndFunction
 
 Function Advance()
-    If (_victim.IsPlayerTeammate())
-        _playerTeammateFlagRemoved = true ; prevent drawing weapons when combat starts
-        _victim.SetPlayerTeammate(false)
-    EndIf
-    _victim.SetRestrained(true)
+    _victim.BlockActivation(true, true)
     _victim.EvaluatePackage()
+    _clone = CloneActor(_victim)
+    _cloneArmor = CloneWornArmor(_victim, _clone)
     GotoState("LifeVictim")
 EndFunction
 
@@ -200,8 +287,19 @@ EndState
 State LifeVictim
 
 Event OnBeginState(string asOldState)
+    _victim.BlockActivation(false)
     If (GetParentCell().IsAttached())
-        OnCellAttach() ; animate victim
+        _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
+        _clone.SetAlpha(1.0)
+        _victim.MoveTo(WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
+        Float nextInterval = FixPosition()
+        If (nextInterval > 0.0)
+            StartTimer(nextInterval, TimerFixPosition)
+        EndIf
+    Else
+        _clone.SetAlpha(1.0)
+        _clone.StopTranslation()
+        _clone.MoveTo(Self, DX, DY, DZ, true)
     EndIf
     StartTimer(LifeIdleTimes[_lifeIdleIndex], TimerAdvance)
 EndEvent
@@ -215,39 +313,28 @@ Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
 EndEvent
 
 Event OnWorkshopObjectMoved(ObjectReference akReference)
-    Float targetX = X + DX
-    Float targetY = Y + DY
-    Float targetZ = Z + DZ
-    Float targetAngleX = GetAngleX()
-    Float targetAngleY = GetAngleY()
-    Float targetAngleZ = GetAngleZ() + DAngleZ
-    _victim.StopTranslation()
-    _victim.MoveTo(Self, DX, DY, DZ, true)
-    If (DAngleZ != 0)
-        _victim.SetAngle(targetAngleX, targetAngleY, targetAngleZ)
+    CancelTimer(TimerFixPosition)
+    Float nextInterval = FixPosition()
+    If (nextInterval > 0.0)
+        StartTimer(nextInterval, TimerFixPosition)
     EndIf
-    _victim.TranslateTo(targetX, targetY, targetZ + 0.1, targetAngleX, targetAngleY, targetAngleZ, 0.0001, 0.0001)
 EndEvent
 
 Event OnCellAttach()
-    If (_victim.WaitFor3DLoad())
-        Float targetX = X + DX
-        Float targetY = Y + DY
-        Float targetZ = Z + DZ
-        Float targetAngleX = GetAngleX()
-        Float targetAngleY = GetAngleY()
-        Float targetAngleZ = GetAngleZ() + DAngleZ
-        _victim.PlayIdle(LifeIdles[_lifeIdleIndex])
-        _victim.MoveTo(Self, DX, DY, DZ, true)
-        If (DAngleZ != 0)
-            _victim.SetAngle(targetAngleX, targetAngleY, targetAngleZ)
+    If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
+        RestoreWornArmor(_clone, _cloneArmor)
+        _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
+        Float nextInterval = FixPosition()
+        If (nextInterval > 0.0)
+            StartTimer(nextInterval, TimerFixPosition)
         EndIf
-        _victim.TranslateTo(targetX, targetY, targetZ + 0.1, targetAngleX, targetAngleY, targetAngleZ, 0.0001, 0.0001)
     EndIf
 EndEvent
 
 Event OnCellDetach()
-    _victim.StopTranslation()
+    CancelTimer(TimerFixPosition)
+    _clone.StopTranslation()
+    _clone.MoveTo(Self, DX, DY, DZ, false)
 EndEvent
 
 Int Function GetGallowsState()
@@ -255,29 +342,50 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
-    Var[] params = new Var[6]
+    Actor player = Game.GetPlayer()
+    _victim.MoveTo(player, 0.0, 0.0, 2048.0, false)
+    _victim.WaitFor3DLoad()
+    _victim.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001)
+    _clone.DisableNoWait()
+    Utility.Wait(0.016)
+    _victim.StopTranslation()
+    _victim.MoveTo(Self, DX, DY, DZ, true)
+    Var[] params = new Var[4]
     params[0] = _victim
-    params[1] = _playerTeammateFlagRemoved
+    params[1] = ActionBleedoutStart
     params[2] = 8.0
-    params[3] = ActionBleedoutStart
-    params[4] = ActionBleedoutStop
-    params[5] = Victims
+    params[3] = ActionBleedoutStop
+    CallFunctionNoWait("PlayBleedOutAnimation", params)
     GotoState("Empty")
-    CallFunctionNoWait("CutNooseOfLifeVictimAndWait", params)
     Return true
 EndFunction
 
 Function Advance()
-    _lifeIdleIndex += 1
-    If (_lifeIdleIndex < LifeIdles.Length)
+    If (_lifeIdleIndex + 1 < LifeIdles.Length)
         ; stay in state but advance to next animation
+        _lifeIdleIndex += 1
         If (GetParentCell().IsAttached())
-            _victim.PlayIdle(LifeIdles[_lifeIdleIndex])
+            _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         EndIf
-        StartTimer(LifeIdleTimes[_lifeIdleIndex], TimerAdvance)        
-        Return
+        StartTimer(LifeIdleTimes[_lifeIdleIndex], TimerAdvance)
+    Else
+        GotoState("DyingVictim")
     EndIf
-    GotoState("DyingVictim")
+EndFunction
+
+Float Function FixPosition()
+    Float targetX = X + DX
+    Float targetY = Y + DY
+    Float targetZ = Z + DZ
+    If (Math.Abs(_clone.X - targetX) > 1 || Math.Abs(_clone.Y - targetY) > 1 || Math.Abs(_clone.Z - targetZ) > 1)
+        Float targetAngleX = GetAngleX()
+        Float targetAngleY = GetAngleY()
+        Float targetAngleZ = GetAngleZ() + DAngleZ
+        _clone.StopTranslation()
+        _clone.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
+        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 1.57, 0.0001, 0.0001)
+    EndIf
+    Return 1.0
 EndFunction
 
 EndState
@@ -313,35 +421,29 @@ Bool Function CutNoose()
 EndFunction
 
 Function Advance()
+    CancelTimer(TimerFixPosition)
     If (GetParentCell().IsAttached())
-        ; this is very tricky, killing the victim will cause it to ragdoll
-        ; this can be prevented by disabling AI but doing so will not register the death until AI is enabled again
-        _victim.EnableAI(false, true)
-        _victim.StopTranslation()
-        _victim.KillEssential(None)
-    Else
-        ; cell is not attached, just kill victim
-        _victim.StopTranslation()
-        _victim.KillEssential(None)
+        _clone.PlayIdle(DeadIdle)
     EndIf
+    _victim.KillEssential(None)
     If (_victim.IsDead())
-        ; done, switch state
-        _victim.StopTranslation()
         GotoState("DeadVictim")
     Else
-        ; failed to kill victim, free victim and go to empty state
-        If (!_victim.IsAIEnabled())
-            _victim.EnableAI(true)
-        EndIf
-        Var[] params = new Var[6]
+        ; unable to kill victim, cut noose to free victim instead
+        Actor player = Game.GetPlayer()
+        _victim.MoveTo(player, 0.0, 0.0, 2048.0, false)
+        _victim.WaitFor3DLoad()
+        _victim.TranslateTo(player.X, player.Y, player.Z + 2048.1, 0.0, 0.0, _victim.GetAngleZ() + 1.57, 0.0001, 0.0001)
+        _clone.DisableNoWait()
+        _victim.StopTranslation()
+        _victim.MoveTo(Self, DX, DY, DZ, true)
+        Var[] params = new Var[4]
         params[0] = _victim
-        params[1] = _playerTeammateFlagRemoved
+        params[1] = ActionBleedoutStart
         params[2] = 8.0
-        params[3] = ActionBleedoutStart
-        params[4] = ActionBleedoutStop
-        params[5] = Victims
+        params[3] = ActionBleedoutStop
+        CallFunctionNoWait("PlayBleedOutAnimation", params)
         GotoState("Empty")
-        CallFunctionNoWait("CutNooseOfLifeVictimAndWait", params)
     EndIf
 EndFunction
 
@@ -349,13 +451,21 @@ EndState
 
 
 ;
-; DeadVictim: Victim is dead
+; DeadVictim: Corpse is hanging on gallows
 ;
 State DeadVictim
 
 Event OnBeginState(string asOldState)
-    If (!GetParentCell().IsAttached())
-        OnCellDetach()
+    If (GetParentCell().IsAttached())
+        _clone.PlayIdle(DeadIdle)
+        _clone.SetUnconscious(true)
+        Float nextInterval = FixPosition()
+        If (nextInterval > 0.0)
+            StartTimer(nextInterval, TimerFixPosition)
+        EndIf
+    Else
+        _clone.StopTranslation()
+        _clone.MoveTo(Self, DX, DY, DZ, false)
     EndIf
 EndEvent
 
@@ -368,68 +478,29 @@ Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
 EndEvent
 
 Event OnWorkshopObjectMoved(ObjectReference akReference)
-    OnCellDetach()
-    OnCellAttach()
+    CancelTimer(TimerFixPosition)
+    Float nextInterval = FixPosition()
+    If (nextInterval > 0.0)
+        StartTimer(nextInterval, TimerFixPosition)
+    EndIf
 EndEvent
 
 Event OnCellAttach()
-    ; victim should already be resurrected, hang it and kill it again
-    If (_victim.WaitFor3DLoad())
-        _victim.QueueUpdate(false, 0)
-        Float targetX = X + DX
-        Float targetY = Y + DY
-        Float targetZ = Z + DZ
-        Float targetAngleX = GetAngleX()
-        Float targetAngleY = GetAngleY()
-        Float targetAngleZ = GetAngleZ() + DAngleZ
-        _victim.PlayIdle(LifeIdles[_lifeIdleIndex - 1])
-        _victim.MoveTo(Self, DX, DY, DZ, true)
-        If (DAngleZ != 0)
-            _victim.SetAngle(targetAngleX, targetAngleY, targetAngleZ)
+    If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
+        RestoreWornArmor(_clone, _cloneArmor)
+        _clone.PlayIdle(DeadIdle)
+        _clone.SetUnconscious(true)
+        Float nextInterval = FixPosition()
+        If (nextInterval > 0.0)
+            StartTimer(nextInterval, TimerFixPosition)
         EndIf
-        _victim.TranslateTo(targetX, targetY, targetZ + 0.1, targetAngleX, targetAngleY, targetAngleZ, 0.0001, 0.0001)
-        Utility.Wait(1)
-        _victim.EnableAI(false, true)
-        _victim.StopTranslation()
-        _victim.KillEssential(None)
     EndIf
 EndEvent
 
 Event OnCellDetach()
-    ; resurrect victim to prepare it for OnCellAttach
-    _victim.EnableAI(true)
-    Armor[] wornArmors = new Armor[0]
-    Int slotIndex = 0
-    While (slotIndex < 32)
-        Armor wornArmor = _victim.GetWornItem(slotIndex).Item as Armor
-        If (wornArmor != None)
-            wornArmors.Add(wornArmor)
-        EndIf
-        slotIndex += 1
-    EndWhile
-    If (_container == None)
-        _container = PlaceAtMe(InvisibleContainer, 1, false, true, true)
-    EndIf
-    _victim.RemoveAllItems(_container)
-    _victim.Resurrect()
-    _victim.SetRestrained(true)
-    _victim.EvaluatePackage()
-    _victim.RemoveAllItems(None)
-    _container.RemoveAllItems(_victim)
-    Int armorIndex = 0
-    While (armorIndex < wornArmors.Length)
-        _victim.EquipItem(wornArmors[armorIndex], true, false)
-        armorIndex += 1
-    EndWhile
-    ; move victim into loaded area for a quick moment to allow events to fire
-    _victim.SetGhost(true)
-    _victim.MoveTo(Game.GetPlayer(), 0, 0, 1024, true)
-    _victim.TranslateTo(_victim.X, _victim.Y, _victim.Z, _victim.GetAngleX(), _victim.GetAngleY(), _victim.GetAngleZ(), 0.0001, 0.0001)
-    _victim.WaitFor3DLoad()
-    Utility.Wait(0.016)
-    _victim.StopTranslation()
-    _victim.MoveTo(Self)
-    _victim.SetGhost(false)
+    CancelTimer(TimerFixPosition)
+    _clone.StopTranslation()
+    _clone.MoveTo(Self, DX, DY, DZ, false)
 EndEvent
 
 Int Function GetGallowsState()
@@ -437,19 +508,29 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
-    If (_victim.IsDead())
-        _victim.EnableAI(true)
-        
-    Else
-        _victim.StopTranslation()
-        _victim.KillEssential()
-    EndIf
-    _victim.MoveTo(WorkshopHoldingCellMarker)
-    _victim.MoveTo(Self, 0, 0, 96 + DZ)
-    If (_container != None)
-        _container.Delete()
-    EndIf
+    _clone.DisableNoWait()
+    Utility.Wait(0.016)
+    _victim.MoveTo(Self, DX, DY, DZ + 32.0, true)
     GotoState("Empty")
+    Return true
+EndFunction
+
+Function Advance()
+EndFunction
+
+Float Function FixPosition()
+    Float targetX = X + DX
+    Float targetY = Y + DY
+    Float targetZ = Z + DZ
+    If (Math.Abs(_clone.X - targetX) > 1 || Math.Abs(_clone.Y - targetY) > 1 || Math.Abs(_clone.Z - targetZ) > 1)
+        Float targetAngleX = GetAngleX()
+        Float targetAngleY = GetAngleY()
+        Float targetAngleZ = GetAngleZ() + DAngleZ
+        _clone.StopTranslation()
+        _clone.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
+        _clone.TranslateTo(targetX, targetY, targetZ, targetAngleX, targetAngleY, targetAngleZ + 1.57, 0.0001, 0.0001)
+    EndIf
+    Return 0.0 ; TODO
 EndFunction
 
 EndState
