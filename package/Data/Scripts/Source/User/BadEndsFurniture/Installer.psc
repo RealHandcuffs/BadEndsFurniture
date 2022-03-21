@@ -3,7 +3,7 @@
 ;
 Scriptname BadEndsFurniture:Installer extends ReferenceAlias
 
-BadEndsFurniture:SoftDependencies Property SoftDependencies Auto Const Mandatory
+BadEndsFurniture:Library Property Library Auto Const Mandatory
 Perk Property ActivationPerk Auto Const Mandatory
 
 String Property DetailedVersion = "0.1 alpha 1" AutoReadOnly ; user version string, will change with every new version
@@ -29,11 +29,11 @@ Event OnPlayerLoadGame()
             notification = "Upgraded to BadEndsFurniture " + DetailedVersion + "."
         EndIf
         GotoState("")
-        SoftDependencies.Clear()
+        Library.SoftDependencies.Clear()
         GotoState("V0")
         InstalledVersion = DetailedVersion
     EndIf
-    SoftDependencies.Refresh()
+    Library.SoftDependencies.Refresh()
     InstallerWorking = false
     If (notification != "")
         BadEndsFurniture:DebugWrapper.Notification(notification)

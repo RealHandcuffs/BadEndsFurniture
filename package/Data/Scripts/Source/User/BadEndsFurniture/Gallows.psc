@@ -4,20 +4,13 @@
 ;
 Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
-Action Property ActionBleedoutStart Auto Const Mandatory
-Action Property ActionBleedoutStop Auto Const Mandatory
 Keyword Property GallowsLink Auto Const Mandatory
-BadEndsFurniture:SoftDependencies Property SoftDependencies Auto Const Mandatory
+BadEndsFurniture:Library Property Library Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
-ObjectReference Property WorkshopHoldingCellMarker Auto Const Mandatory
 
 Actor _victim
 Actor _clone
-Struct EquippedItem
-    Form baseItem = None
-    ObjectReference item = None
-EndStruct
-EquippedItem[] _cloneEquipment
+Library:EquippedItem[] _cloneEquipment
 Int _lifeIdleIndex
 
 ;
@@ -105,89 +98,6 @@ Function FixClonePosition()
     EndIf
 EndFunction
 
-; play the bleedout animation for an actor
-Function PlayBleedOutAnimation(Actor akActor, Action bleedoutStart, Float bleedOutTime, Action bleedoutStop)
-    akActor.PlayIdleAction(bleedoutStart)
-    Utility.Wait(bleedOutTime)
-    akActor.PlayIdleAction(bleedoutStop)
-    akActor.EvaluatePackage()
-EndFunction
-
-; create a visual clone of an actor
-Actor Function CloneActor(Actor akActor)
-    ActorBase leveledActorBase = akActor.GetLeveledActorBase()
-    ActorBase cloneBase = leveledActorBase.GetTemplate(true)
-    If (cloneBase == None)
-        cloneBase = leveledActorBase
-    EndIf
-    Actor player = Game.GetPlayer()
-    Actor clone = player.PlaceAtMe(cloneBase, 1, false, true, false) as Actor ; initially disabled
-    clone.RemoveFromAllFactions()
-    clone.SetValue(Game.GetAggressionAV(), 0)
-    Victims.AddRef(clone) ; for AI package
-    clone.SetGhost(true)
-    clone.BlockActivation(true, true)
-    clone.MoveTo(player, 0.0, 0.0, 2048.0, false)
-    clone.EnableNoWait()
-    clone.WaitFor3DLoad()
-    clone.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 0.0001, 0.0001) ; stay in positon
-    clone.SetAlpha(0.0)
-    clone.RemoveAllItems()
-    SoftDependencies.PrepareCloneForAnimation(akActor, clone)
-    clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
-    ; TODO set name
-    Return clone
-EndFunction
-
-EquippedItem[] Function CloneWornArmor(Actor akActor, Actor clone)
-    EquippedItem[] clonedArmor = new EquippedItem[32]
-    Int slotIndex = 31
-    While (slotIndex >= 0)
-        Armor baseItem = akActor.GetWornItem(slotIndex).Item as Armor
-        If (baseItem != None)
-            ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
-            item.RemoveAllMods()
-            ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
-            Int modIndex = 0
-            While (modIndex < objectMods.Length)
-                item.AttachMod(objectMods[modIndex])
-                modIndex += 1
-            EndWhile
-            clone.AddItem(item, 1, true)
-            If (!SoftDependencies.EquipSpecialItem(_clone, item))
-                clone.EquipItem(baseItem, true, true)
-            EndIf
-            EquippedItem e = new EquippedItem
-            e.BaseItem = baseItem
-            e.Item = item
-            clonedArmor[slotIndex] = e
-        EndIf
-        slotIndex -= 1
-    EndWhile
-    Return clonedArmor
-EndFunction
-
-; restore the worn armor of the clone, necessary when the cell has been loaded
-Function RestoreWornArmor(Actor akActor, EquippedItem[] wornEquipment)
-    Int slotIndex = wornEquipment.Length - 1
-    While (slotIndex >= 0)
-        EquippedItem e = wornEquipment[slotIndex]
-        If (e == None)
-            akActor.UnequipItemSlot(slotIndex)
-        Else
-            Int count = akActor.GetItemCount(e.BaseItem)
-            If (count > 1)
-                e.Item.Drop()
-                akActor.UnequipItemSlot(slotIndex)
-                akActor.RemoveItem(e.BaseItem, count - 1, true, None)
-                akActor.AddItem(e.Item, 1, true)
-            EndIf
-            akActor.EquipItem(e.BaseItem, true, true)
-        EndIf
-        slotIndex -= 1
-    EndWhile
-EndFunction
-
 Event OnLoad()
     GotoState("Empty") ; initialize after construction
 EndEvent
@@ -225,7 +135,7 @@ Event OnBeginState(string asOldState)
         _clone.Delete()
         _clone = None
     EndIf
-    _cloneEquipment.Clear()
+    _cloneEquipment = None
     _lifeIdleIndex = 0
     BlockActivation(false)
 EndEvent
@@ -302,9 +212,11 @@ EndFunction
 Function Advance()
     _victim.BlockActivation(true, true)
     _victim.EvaluatePackage()
-    _clone = CloneActor(_victim)
+    _clone = Library.CreateNakedClone(_victim, Victims)
     _clone.PlayIdle(DeadIdle)
-    _cloneEquipment = CloneWornArmor(_victim, _clone)
+    _cloneEquipment = Library.CloneWornArmor(_victim, _clone)
+    Library.AddNooseToEquipment(_clone, _cloneEquipment) ; ignore returned armor
+    _clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
     GotoState("LifeVictim")
 EndFunction
 
@@ -322,7 +234,7 @@ Event OnBeginState(string asOldState)
         _clone.SetAlpha(1.0)
         _clone.EnableAI(false, true)
         FixClonePosition()
-        _victim.MoveTo(WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
+        _victim.MoveTo(Library.WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
         _clone.EnableAI(true)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         StartTimer(300, TimerFixClonePosition)
@@ -350,7 +262,7 @@ EndEvent
 
 Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        RestoreWornArmor(_clone, _cloneEquipment)
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
         StartTimer(300, TimerFixClonePosition)
@@ -379,12 +291,7 @@ Bool Function CutNoose()
     EndIf
     _victim.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
     _clone.DisableNoWait()
-    Var[] params = new Var[4]
-    params[0] = _victim
-    params[1] = ActionBleedoutStart
-    params[2] = 8.0
-    params[3] = ActionBleedoutStop
-    CallFunctionNoWait("PlayBleedOutAnimation", params)
+    Library.PlayBleedOutAnimationNoWait(_victim, 8.0)
     GotoState("Empty")
     Return true
 EndFunction
@@ -456,12 +363,7 @@ Function Advance()
         EndIf
         _victim.MoveTo(Self, DX, DY, DZ, true)
         _clone.DisableNoWait()
-        Var[] params = new Var[4]
-        params[0] = _victim
-        params[1] = ActionBleedoutStart
-        params[2] = 8.0
-        params[3] = ActionBleedoutStop
-        CallFunctionNoWait("PlayBleedOutAnimation", params)
+        Library.PlayBleedOutAnimationNoWait(_victim, 8.0)
         GotoState("Empty")
     EndIf
 EndFunction
@@ -499,7 +401,7 @@ EndEvent
 
 Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        RestoreWornArmor(_clone, _cloneEquipment)
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.PlayIdle(DeadIdle)
         _clone.SetUnconscious(true)
         FixClonePosition()
