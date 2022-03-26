@@ -6,6 +6,7 @@ Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
 Keyword Property GallowsLink Auto Const Mandatory
 ActorValue Property Paralysis Auto Const Mandatory
+Keyword Property PlayerSelectVictimLink Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 
@@ -77,6 +78,19 @@ EndFunction
 
 ; ---- internal functions -----
 
+; select a victim for the gallows, called by activation and by perk
+Function SelectVictim(Actor akActor)
+    If (akActor != None)
+        ; TODO verify
+        Actor player = Game.GetPlayer()
+        If (player.GetLinkedRef(PlayerSelectVictimLink) == Self)
+            CancelTimer(TimerSelectVictimAbort)
+            player.SetLinkedRef(None, PlayerSelectVictimLink)
+        EndIf
+        StartHangingScene(akActor, true)
+    EndIf
+EndFunction
+
 ; advance to next state
 Function Advance()
     ; implemented in state
@@ -105,6 +119,7 @@ EndEvent
 
 Int Property TimerAdvance = 1 AutoReadOnly
 Int Property TimerFixClonePosition = 2 AutoReadOnly
+Int Property TimerSelectVictimAbort = 3 AutoReadOnly
 
 Event OnTimer(int aiTimerID)
     If (aiTimerID == TimerAdvance)
@@ -113,6 +128,12 @@ Event OnTimer(int aiTimerID)
         If (GetParentCell().IsAttached() && _clone != None && Self.WaitFor3DLoad() && _clone.WaitFor3DLoad())
             FixClonePosition()
             StartTimer(300, TimerFixClonePosition)
+        EndIf
+    ElseIf (aiTimerID == TimerSelectVictimAbort)
+        Actor player = Game.GetPlayer()
+        If (player.GetLinkedRef(PlayerSelectVictimLink) == Self)
+            player.SetLinkedRef(None, PlayerSelectVictimLink)
+            BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Aborting victim selection.")
         EndIf
     EndIf
 EndEvent
@@ -150,9 +171,18 @@ Event OnActivate(ObjectReference akActionRef)
     Actor akActor = akActionRef as Actor
     If (akActor != None)
         If (akActionRef == Game.GetPlayer())
-            BadEndsFurniture:DebugWrapper.Notification("TODO HANDLE ACTIVATE")
+            ObjectReference linked = akActor.GetLinkedRef(PlayerSelectVictimLink)
+            If (linked == Self)
+                CancelTimer(TimerSelectVictimAbort)
+                akActor.SetLinkedRef(None, PlayerSelectVictimLink)
+                BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Aborting victim selection.")
+            Else
+                akActor.SetLinkedRef(Self, PlayerSelectVictimLink)
+                BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Select a victim.")
+                StartTimer(15.0, TimerSelectVictimAbort)
+            EndIf
         ElseIf (akActor.IsDoingFavor())
-            StartHangingScene(akActor, true) ; player commanded NPC to interact with gallows, hang NPC
+            SelectVictim(akActor)
         EndIf
     EndIf
 EndEvent
