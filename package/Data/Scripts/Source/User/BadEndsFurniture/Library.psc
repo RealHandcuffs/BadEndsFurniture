@@ -20,7 +20,7 @@ Function PlayBleedOutAnimationNoWait(Actor akActor, Float bleedoutTime)
     Var[] args = new Var[2]
     args[0] = akActor
     args[1] = bleedoutTime
-    CallFunctionNoWait("PlayBleedOutAnimationWait", args)
+    CallFunctionNoWait("PlayBleedOutAnimation", args)
 EndFunction
 
 ; play the bleedout animation for an actor, wait until it is complete
@@ -62,7 +62,10 @@ Actor Function CreateNakedCloneGlobal(Actor akActor, RefCollectionAlias refColle
     clone.SetAlpha(0.0)
     clone.RemoveAllItems()
     sdeps.PrepareCloneForAnimation(akActor, clone)
-    ; TODO set name
+    String actorDisplayName = akActor.GetDisplayName()
+    If (clone.GetDisplayName() != actorDisplayName)
+        LL_FourPlay.ObjectReferenceSetSimpleDisplayName(clone, actorDisplayName)
+    EndIf
     Return clone
 EndFunction
 

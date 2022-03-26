@@ -52,7 +52,7 @@ then
       exit -1
     fi
 fi
-SOURCE_BASE=$(echo "$SOURCE_BASE" | sed -e 's/\///' -e 's/\//:\\/' -e 's/\//\\/g')
+SOURCE_BASE=$(cygpath -w "$SOURCE_BASE")
 
 # find F4SE scripts source directory for papyrus compiler
 SOURCE_F4SE="$DIR_FALLOUT4CREATIONKIT/Data/Scripts/Source/User"
@@ -65,7 +65,10 @@ then
       exit -1
     fi
 fi
-SOURCE_F4SE=$(echo "$SOURCE_F4SE" | sed -e 's/\///' -e 's/\//:\\/' -e 's/\//\\/g')
+SOURCE_F4SE=$(cygpath -w "$SOURCE_F4SE")
+
+# make variable for stubs
+SOURCE_STUBS=$(cygpath -w "$BASE_DIR/stubs")
 
 # set up a function to compile all scripts in a folder using parallel execution
 # $1: input folder (must be subfolder of "package")
@@ -89,7 +92,7 @@ function compile_folder() {
     else
       options="-release -final -optimize -quiet"
     fi
-    "$DIR_FALLOUT4CREATIONKIT/Papyrus Compiler/PapyrusCompiler.exe" "$f" $options -flags="$SOURCE_BASE\\Institute_Papyrus_Flags.flg" -import="$SOURCE_F4SE;$SOURCE_BASE;$3" -output="$(echo "$BASE_DIR/build/$1" | sed -e 's/\///' -e 's/\//:\\/' -e 's/\//\\/g')" &
+    "$DIR_FALLOUT4CREATIONKIT/Papyrus Compiler/PapyrusCompiler.exe" "$f" $options -flags="$SOURCE_BASE\\Institute_Papyrus_Flags.flg" -import="$SOURCE_STUBS;$SOURCE_F4SE;$SOURCE_BASE;$3" -output="$(cygpath -w "$BASE_DIR/build/$1")" &
     pids+=( "$!" )
   done
   failures=()

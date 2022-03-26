@@ -5,6 +5,7 @@
 Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
 Keyword Property GallowsLink Auto Const Mandatory
+ActorValue Property Paralysis Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 
@@ -203,6 +204,7 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
+    _clone.SetLinkedRef(None, GallowsLink) ; disable activation perk
     While (GetState() == "SetupVictim")
         Utility.Wait(0.016)
     EndWhile
@@ -278,6 +280,7 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
+    _clone.SetLinkedRef(None, GallowsLink)
     Actor player = Game.GetPlayer()
     _victim.MoveTo(player, 0.0, 0.0, 3072.0, false)
     _victim.WaitFor3DLoad()
@@ -338,6 +341,7 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
+    _clone.SetLinkedRef(None, GallowsLink)
     While (GetState() == "Dying")
         Utility.Wait(0.016)
     EndWhile
@@ -418,12 +422,19 @@ Int Function GetGallowsState()
 EndFunction
 
 Bool Function CutNoose()
+    _clone.SetLinkedRef(None, GallowsLink)
     Actor player = Game.GetPlayer()
-    _clone.EnableAI(false, true)
-    _clone.StopTranslation()
-    _clone.MoveTo(player, 0.0, 0.0, 2048.0, false)
-    _clone.DisableNoWait()
-    _victim.MoveTo(Self, DX, DY, DZ, true)
+    If (GetParentCell().IsAttached())
+        _clone.StopTranslation()
+        PushActorAway(_clone, 0)
+        _clone.SetValue(Paralysis, 1)
+        Utility.Wait(3.0) ; heuristic time to finish falling
+        _clone.DisableNoWait()
+        _victim.MoveTo(_clone, 0, 0, 0, true)
+    Else
+        _clone.DisableNoWait()
+        _victim.MoveTo(Self, DX, DY, DZ, true)
+    EndIf
     GotoState("Empty")
     Return true
 EndFunction
