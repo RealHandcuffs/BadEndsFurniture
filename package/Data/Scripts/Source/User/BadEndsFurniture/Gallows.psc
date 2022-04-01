@@ -300,7 +300,8 @@ Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
-        BadEndsFurniture:Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        Utility.Wait(2.0) ; heuristical value
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf
@@ -443,7 +444,8 @@ Event OnCellAttach()
         _clone.PlayIdle(DeadIdle)
         _clone.SetUnconscious(true)
         FixClonePosition()
-        BadEndsFurniture:Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        Utility.Wait(2.0) ; heuristical value
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf

@@ -16,6 +16,7 @@ EndGroup
 Group RealHandcuffs
     Quest Property RH_MainQuest = None Auto
     Keyword Property RH_NoPackage = None Auto
+    MiscObject Property RH_NpcToken = None Auto
 EndGroup
 
 Group DeviousDevices
@@ -53,6 +54,7 @@ Function UpdateRealHandcufs()
     EndIf
     RH_MainQuest = Game.GetFormFromFile(0x000F99, RealHandcuffsEsp) as Quest
     RH_NoPackage = Game.GetFormFromFile(0x000860, RealHandcuffsEsp) as Keyword
+    RH_NpcToken =  Game.GetFormFromFile(0x000803, RealHandcuffsEsp) as MiscObject
 EndFunction
 
 Function UpdateDeviousDevices()
@@ -84,6 +86,15 @@ Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference ite
         EndIf
     EndIf
     Return False
+EndFunction
+
+;
+; Add items that need to be kept in the inventory to the array
+;
+Function AddItemsToKeep(Form[] itemsToKeep)
+    If (RealHandcuffsInstalled)
+        itemsToKeep.Add(RH_NpcToken)
+    EndIf
 EndFunction
 
 ;

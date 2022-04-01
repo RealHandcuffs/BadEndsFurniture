@@ -151,28 +151,49 @@ EndFunction
 
 
 ; restore the worn armor of an actor, necessary when the cell has been loaded
-Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment) Global
+Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment, ObjectReference akOtherContainer = None)
+    RestoreWornEquipmentGlobal(akActor, wornEquipment, SoftDependencies, akOtherContainer)
+EndFunction
+
+Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, ObjectReference akOtherContainer = None) Global
+    Form[] baseItemsToKeep = new Form[0]
+    sdeps.AddItemsToKeep(baseItemsToKeep)
     Int slotIndex = 31
     While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
-        If (slotIndex >= wornEquipment.Length)
-            akActor.UnequipItemSlot(slotIndex)
-        Else
+        Bool keepItem = false
+        If (slotIndex < wornEquipment.Length)
             EquippedItem e = wornEquipment[slotIndex]
-            If (e.BaseItem == None)
-                akActor.UnequipItemSlot(slotIndex)
-            Else
+            If (e.BaseItem != None)
                 If (e.Item != None)
                     Int count = akActor.GetItemCount(e.BaseItem)
                     If (count > 1)
+                        akActor.UnequipItem(e.BaseItem, true, true)
                         e.Item.Drop()
-                        akActor.UnequipItemSlot(slotIndex)
-                        akActor.RemoveItem(e.BaseItem, count - 1, true, None)
+                        akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
                         akActor.AddItem(e.Item, 1, true)
                     EndIf
                 EndIf
                 akActor.EquipItem(e.BaseItem, true, true)
+                baseItemsToKeep.Add(e.BaseItem)
+                keepItem = true
+            EndIf
+        EndIf
+        If (!keepItem)
+            Form baseItem = akActor.GetWornItem(slotIndex).Item
+            If ((baseItem as Armor) != None || (baseItem as Weapon) != None)
+                akActor.UnequipItem(baseItem, true, true)
+                akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
             EndIf
         EndIf
         slotIndex -= 1
+    EndWhile
+    Form[] inventory = akActor.GetInventoryItems()
+    Int index = 0
+    While (index < inventory.Length)
+        Form baseItem = inventory[index]
+        If (baseItemsToKeep.Find(baseItem) < 0)
+            akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
+        EndIf
+        index += 1
     EndWhile
 EndFunction
