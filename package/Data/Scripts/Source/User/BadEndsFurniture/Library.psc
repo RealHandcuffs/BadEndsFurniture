@@ -85,30 +85,39 @@ EndFunction
 EquippedItem[] Function CloneWornArmorGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps) Global
     EquippedItem[] clonedArmor = new EquippedItem[0]
     Int slotIndex = 0
-    While (slotIndex <= 31) ; follow precedence low-to-high
+    While (slotIndex <= 31) ; follow precedence low-to-high for detecting items
         Armor baseItem = akActor.GetWornItem(slotIndex).Item as Armor
         If (baseItem != None)
             While (clonedArmor.Length < slotIndex)
                 clonedArmor.Add(new EquippedItem)
             EndWhile
-            ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
-            item.RemoveAllMods()
-            ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
-            Int modIndex = 0
-            While (modIndex < objectMods.Length)
-                item.AttachMod(objectMods[modIndex])
-                modIndex += 1
-            EndWhile
-            clone.AddItem(item, 1, true)
-            If (!sdeps.EquipSpecialItem(clone, item))
-                clone.EquipItem(baseItem, true, true)
-            EndIf
             EquippedItem e = new EquippedItem
             e.BaseItem = baseItem
-            e.Item = item
+            ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
+            If (objectMods.Length > 0)
+                ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
+                item.RemoveAllMods()
+                Int modIndex = 0
+                While (modIndex < objectMods.Length)
+                    item.AttachMod(objectMods[modIndex])
+                    modIndex += 1
+                EndWhile
+                clone.AddItem(item, 1, true)
+                e.Item = item
+            EndIf
             clonedArmor.Add(e)
         EndIf
         slotIndex += 1
+    EndWhile
+    slotIndex = clonedArmor.Length - 1;
+    While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
+        EquippedItem e = clonedArmor[slotIndex]
+        If (e.BaseItem != None)
+            If (!sdeps.EquipSpecialItem(clone, e.BaseItem, e.Item))
+                clone.EquipItem(e.BaseItem, true, true)
+            EndIf
+        EndIf
+        slotIndex -= 1
     EndWhile
     Return clonedArmor
 EndFunction
@@ -121,7 +130,7 @@ EndFunction
 
 Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment) Global
     Int slotIndex = 31
-    While (slotIndex >= 0) ; use reverse precedence high-to-low
+    While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
         If (slotIndex >= wornEquipment.Length)
             akActor.UnequipItemSlot(slotIndex)
         Else

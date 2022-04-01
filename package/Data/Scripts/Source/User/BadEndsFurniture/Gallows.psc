@@ -294,9 +294,9 @@ EndEvent
 
 Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         StartTimer(300, TimerFixClonePosition)
     EndIf
 EndEvent
@@ -435,10 +435,10 @@ EndEvent
 
 Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.PlayIdle(DeadIdle)
         _clone.SetUnconscious(true)
         FixClonePosition()
+        Library.RestoreWornEquipment(_clone, _cloneEquipment)
         StartTimer(300, TimerFixClonePosition)
     EndIf
 EndEvent
@@ -455,10 +455,19 @@ Bool Function CutNoose()
     _clone.SetLinkedRef(None, GallowsLink)
     Actor player = Game.GetPlayer()
     If (GetParentCell().IsAttached())
+        Float currentZ = _clone.Z
+        Float lastZ = _clone.Z + 1 ; initialize to value > currentZ
         _clone.StopTranslation()
-        PushActorAway(_clone, 0)
         _clone.SetValue(Paralysis, 1)
-        Utility.Wait(3.0) ; heuristic time to finish falling
+        Int waitCount = 0
+        While (lastZ > currentZ && waitCount < 180)
+            Utility.Wait(0.016)
+            lastZ = currentZ
+            currentZ = _clone.Z
+            waitCount += 1
+        EndWhile
+        PushActorAway(_clone, 0) ; wait for ground hit to start ragdolling
+        Utility.Wait(3.0) ; heuristic time to finish ragdolling
         _clone.DisableNoWait()
         _victim.MoveTo(_clone, 0, 0, 0, true)
     Else

@@ -54,8 +54,8 @@ EndFunction
 ;
 ; Try to equip a special item on an actor.
 ;
-Bool Function EquipSpecialItem(Actor akActor, ObjectReference item)
-    If (RealHandcuffsInstalled)
+Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference item)
+    If (item != None && RealHandcuffsInstalled)
         ScriptObject restraintBase = item.CastAs("RealHandcuffs:RestraintBase")
         If (restraintBase != None)
             Var[] args = new Var[2]
