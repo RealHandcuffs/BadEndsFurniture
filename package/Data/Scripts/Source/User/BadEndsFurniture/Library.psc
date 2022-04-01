@@ -5,7 +5,7 @@ Scriptname BadEndsFurniture:Library extends Quest
 
 Action Property ActionBleedoutStart Auto Const Mandatory
 Action Property ActionBleedoutStop Auto Const Mandatory
-Armor[] Property NooseArmor Auto Const Mandatory
+Armor[] Property WristRopeArmorArray Auto Const Mandatory
 ObjectReference Property WorkshopHoldingCellMarker Auto Const Mandatory
 
 BadEndsFurniture:SoftDependencies Property SoftDependencies
@@ -123,12 +123,35 @@ EquippedItem[] Function CloneWornArmorGlobal(Actor akActor, Actor clone, BadEnds
 EndFunction
 
 
-; restore the worn armor of an actor, necessary when the cell has been loaded
-Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment)
-    RestoreWornEquipmentGlobal(akActor, wornEquipment)
+; Add wrist ropes the worn equipment of an actor
+Armor Function AddWristRopesToEquipment(Actor akActor, EquippedItem[] wornEquipment)
+    If (!SoftDependencies.DeviousDevicesInstalled)
+        Return None ; wrist ropes model is from devious devices
+    EndIf
+    Return AddWristRopesToEquipmentGlobal(akActor, wornEquipment, WristRopeArmorArray)
 EndFunction
 
-Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment) Global
+Armor Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] armorArray) Global
+    Int startSlotIndex = 32 - armorArray.Length
+    Int slotIndex = startSlotIndex
+    While (slotIndex <= 31) ; follow precedence low-to-high
+        While (wornEquipment.Length <= slotIndex)
+            wornEquipment.Add(new EquippedItem)
+        EndWhile
+        EquippedItem e = wornEquipment[slotIndex]
+        If (e.BaseItem == None)
+            e.BaseItem = armorArray[slotIndex - startSlotIndex]
+            akActor.EquipItem(e.BaseItem, true, true)
+            Return e.BaseItem as Armor
+        EndIf
+        slotIndex += 1
+    EndWhile
+    Return None
+EndFunction
+
+
+; restore the worn armor of an actor, necessary when the cell has been loaded
+Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment) Global
     Int slotIndex = 31
     While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
         If (slotIndex >= wornEquipment.Length)
@@ -152,28 +175,4 @@ Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment)
         EndIf
         slotIndex -= 1
     EndWhile
-EndFunction
-
-
-; Add a noose to the worn equipment of an actor
-Armor Function AddNooseToEquipment(Actor akActor, EquippedItem[] wornEquipment)
-    Return AddNooseToEquipmentGlobal(akActor, wornEquipment, NooseArmor)
-EndFunction
-
-Armor Function AddNooseToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] nArmor) Global
-    Int startSlotIndex = 32 - nArmor.Length
-    Int slotIndex = startSlotIndex
-    While (slotIndex <= 31) ; follow precedence low-to-high
-        While (wornEquipment.Length <= slotIndex)
-            wornEquipment.Add(new EquippedItem)
-        EndWhile
-        EquippedItem e = wornEquipment[slotIndex]
-        If (e.BaseItem == None)
-            e.BaseItem = nArmor[slotIndex - startSlotIndex]
-            akActor.EquipItem(e.BaseItem, true, true)
-            Return e.BaseItem as Armor
-        EndIf
-        slotIndex += 1
-    EndWhile
-    Return None
 EndFunction

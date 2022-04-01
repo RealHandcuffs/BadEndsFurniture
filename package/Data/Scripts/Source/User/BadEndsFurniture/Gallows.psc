@@ -8,6 +8,7 @@ Keyword Property GallowsLink Auto Const Mandatory
 ActorValue Property Paralysis Auto Const Mandatory
 Keyword Property PlayerSelectVictimLink Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
+Armor Property NooseCollarArmor Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 
 Actor _victim
@@ -109,7 +110,7 @@ Function FixClonePosition()
             clone.SetAngle(0.0, 0.0, targetAngleZ)
         EndIf
         clone.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
-        clone.TranslateTo(targetX, targetY, targetZ, 0.0, 0.0, targetAngleZ + 0.0524, 0.0001, 0.0001)
+        clone.TranslateTo(targetX, targetY, targetZ, 0.0, 0.0, targetAngleZ + 0.0524, 10000, 0.0001)
     EndIf
 EndFunction
 
@@ -247,7 +248,10 @@ Function Advance()
     _clone = Library.CreateNakedClone(_victim, Victims)
     _clone.PlayIdle(DeadIdle)
     _cloneEquipment = Library.CloneWornArmor(_victim, _clone)
-    Library.AddNooseToEquipment(_clone, _cloneEquipment) ; ignore returned armor
+    If (!Library.SoftDependencies.IsWearingWristRestraints(_clone))
+        Library.AddWristRopesToEquipment(_clone, _cloneEquipment) ; ignore returned armor
+    EndIf
+    _clone.EquipItem(NooseCollarArmor, true, true)
     _clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
     GotoState("LifeVictim")
 EndFunction
@@ -296,7 +300,8 @@ Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        BadEndsFurniture:Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf
 EndEvent
@@ -438,7 +443,8 @@ Event OnCellAttach()
         _clone.PlayIdle(DeadIdle)
         _clone.SetUnconscious(true)
         FixClonePosition()
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        BadEndsFurniture:Library.RestoreWornEquipment(_clone, _cloneEquipment)
+        _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf
 EndEvent

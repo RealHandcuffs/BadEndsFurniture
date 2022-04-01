@@ -6,13 +6,20 @@ Scriptname BadEndsFurniture:SoftDependencies extends Quest
 Activator Property Gallows Auto Const Mandatory
 
 Bool Property RealHandcuffsInstalled = False Auto
+Bool Property DeviousDevicesInstalled = False Auto
 
 Group Plugins
     String Property RealHandcuffsEsp = "RealHandcuffs.esp" AutoReadOnly
+    String Property DeviousDevicesEsm = "Devious Devices.esm" AutoReadOnly
 EndGroup
 
 Group RealHandcuffs
-    Keyword Property NoPackage = None Auto
+    Quest Property RH_MainQuest = None Auto
+    Keyword Property RH_NoPackage = None Auto
+EndGroup
+
+Group DeviousDevices
+    Keyword Property DD_kw_ItemType_WristCuffs = None Auto
 EndGroup
 
 ;
@@ -20,6 +27,7 @@ EndGroup
 ;
 Function Clear()
     RealHandcuffsInstalled = false
+    DeviousDevicesInstalled = false
 EndFunction
 
 ;
@@ -31,6 +39,11 @@ Function Refresh()
     If (RealHandcuffsInstalled && !oldRealHandcuffsInstalled)
         UpdateRealHandcufs()
     EndIf
+    Bool oldDeviousDevicesInstalled = DeviousDevicesInstalled
+    DeviousDevicesInstalled = Game.IsPluginInstalled(DeviousDevicesEsm)
+    If (DeviousDevicesInstalled && !oldDeviousDevicesInstalled)
+        UpdateDeviousDevices()
+    EndIf
 EndFunction
 
 Function UpdateRealHandcufs()
@@ -38,7 +51,12 @@ Function UpdateRealHandcufs()
     If (!boundHandsGenericFurnitureList.HasForm(Gallows))
         boundHandsGenericFurnitureList.AddForm(Gallows)
     EndIf
-    NoPackage = Game.GetFormFromFile(0x000860, RealHandcuffsEsp) as Keyword
+    RH_MainQuest = Game.GetFormFromFile(0x000F99, RealHandcuffsEsp) as Quest
+    RH_NoPackage = Game.GetFormFromFile(0x000860, RealHandcuffsEsp) as Keyword
+EndFunction
+
+Function UpdateDeviousDevices()
+    DD_kw_ItemType_WristCuffs = Game.GetFormFromFile(0x01196C, DeviousDevicesEsm) as Keyword
 EndFunction
 
 
@@ -47,7 +65,7 @@ EndFunction
 ;
 Function PrepareCloneForAnimation(Actor akActor, Actor clone)
     If (RealHandcuffsInstalled)
-        clone.AddKeyword(NoPackage)
+        clone.AddKeyword(RH_NoPackage)
     EndIf
 EndFunction
 
@@ -55,7 +73,7 @@ EndFunction
 ; Try to equip a special item on an actor.
 ;
 Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference item)
-    If (item != None && RealHandcuffsInstalled)
+    If (RealHandcuffsInstalled && item != None)
         ScriptObject restraintBase = item.CastAs("RealHandcuffs:RestraintBase")
         If (restraintBase != None)
             Var[] args = new Var[2]
@@ -66,4 +84,29 @@ Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference ite
         EndIf
     EndIf
     Return False
+EndFunction
+
+;
+; Check if an actor is wearing wrist restraints.
+;
+Bool Function IsWearingWristRestraints(Actor akActor)
+    If (RealHandcuffsInstalled)
+        If (AreWristsBoundRealHandcuffsGlobal(akActor, RH_MainQuest))
+            Return true
+        EndIf
+    EndIf
+    If (DeviousDevicesInstalled)
+        If (akActor.WornHasKeyword(DD_kw_ItemType_WristCuffs))
+            Return true
+        EndIf
+    EndIf
+    Return false
+EndFunction
+
+Bool Function AreWristsBoundRealHandcuffsGlobal(Actor akActor, Quest thirdPartyApiQuest) Global
+    RealHandcuffs:ThirdPartyApi api = thirdPartyApiQuest as RealHandcuffs:ThirdPartyApi
+    If (api.ApiVersion() >= 6)
+        Return api.HasHandsBoundBehindBack(akActor)
+    EndIf
+    Return false
 EndFunction
