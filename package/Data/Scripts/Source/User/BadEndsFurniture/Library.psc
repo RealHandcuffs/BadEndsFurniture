@@ -55,11 +55,12 @@ Actor Function CreateNakedCloneGlobal(Actor akActor, RefCollectionAlias refColle
     EndIf
     clone.SetGhost(true)
     clone.BlockActivation(true, true)
-    clone.MoveTo(player, 0.0, 0.0, 2048.0, false)
+    clone.MoveTo(player, 0.0, 0.0, 3072.0, false)
     clone.EnableNoWait()
     clone.WaitFor3DLoad()
-    clone.TranslateTo(player.X, player.Y, player.Z + 2048.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 0.0001, 0.0001) ; stay in positon
     clone.SetAlpha(0.0)
+    clone.MoveTo(player, 0.0, 0.0, 512.0, false)
+    clone.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001) ; stay in positon
     clone.RemoveAllItems()
     sdeps.PrepareCloneForAnimation(akActor, clone)
     String actorDisplayName = akActor.GetDisplayName()
@@ -124,14 +125,14 @@ EndFunction
 
 
 ; Add wrist ropes the worn equipment of an actor
-Armor Function AddWristRopesToEquipment(Actor akActor, EquippedItem[] wornEquipment)
+Int Function AddWristRopesToEquipment(Actor akActor, EquippedItem[] wornEquipment)
     If (!SoftDependencies.DeviousDevicesInstalled)
-        Return None ; wrist ropes model is from devious devices
+        Return -1 ; wrist ropes model is from devious devices
     EndIf
     Return AddWristRopesToEquipmentGlobal(akActor, wornEquipment, WristRopeArmorArray)
 EndFunction
 
-Armor Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] armorArray) Global
+Int Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] armorArray) Global
     Int startSlotIndex = 32 - armorArray.Length
     Int slotIndex = startSlotIndex
     While (slotIndex <= 31) ; follow precedence low-to-high
@@ -142,11 +143,11 @@ Armor Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] worn
         If (e.BaseItem == None)
             e.BaseItem = armorArray[slotIndex - startSlotIndex]
             akActor.EquipItem(e.BaseItem, true, true)
-            Return e.BaseItem as Armor
+            Return slotIndex
         EndIf
         slotIndex += 1
     EndWhile
-    Return None
+    Return -1
 EndFunction
 
 
@@ -196,4 +197,22 @@ Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment,
         EndIf
         index += 1
     EndWhile
+EndFunction
+
+
+; transfer non-worn equipment from corpse of actor to corpse of clone
+Function TransferNonWornEquipmentAfterDeath(Actor akActor, Actor clone, EquippedItem[] cloneWornEquipment)
+    TransferNonWornEquipmentAfterDeathGlobal(akActor, clone, cloneWornEquipment)
+EndFunction
+
+Function TransferNonWornEquipmentAfterDeathGlobal(Actor akActor, Actor clone, EquippedItem[] cloneWornEquipment) Global
+    Int slotIndex = cloneWornEquipment.Length - 1
+    While (slotIndex >= 0) ; use reverse precedence high-to-low for removing items
+        EquippedItem e = cloneWornEquipment[slotIndex]
+        If (e.BaseItem != None)
+            akActor.RemoveItem(e.BaseItem, 1, true, None)
+        EndIf
+        slotIndex -= 1
+    EndWhile
+    akActor.RemoveAllItems(clone, true)
 EndFunction

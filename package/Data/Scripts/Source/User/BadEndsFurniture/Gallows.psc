@@ -9,12 +9,15 @@ ActorValue Property Paralysis Auto Const Mandatory
 Keyword Property PlayerSelectVictimLink Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 Armor Property NooseCollarArmor Auto Const Mandatory
+VoiceType Property NpcNoLines Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 
 Actor _victim
 Actor _clone
 Library:EquippedItem[] _cloneEquipment
+Int _cloneWristRopesSlotIndex
 Int _lifeIdleIndex
+Bool _handlingCellAttach
 
 ;
 ; Must be set to an array of idles that will play sequentially.
@@ -38,6 +41,12 @@ Float Property DX = 0.0 Auto
 Float Property DY = 0.0 Auto
 Float Property DZ = 0.0 Auto
 Float Property DAngleZ = 0.0 Auto
+
+;
+; When set to true, the corpse of the original victim is teleported in when cutting down the corpse.
+; Otherwise the corpse of the clone is kept but the equipment of the victim is moved to the clone.
+;
+Bool Property TeleportInOriginalVictimCorpse = False Auto
 
 ;
 ; Get the current victim, None if gallows is empty.
@@ -159,7 +168,9 @@ Event OnBeginState(string asOldState)
         _clone = None
     EndIf
     _cloneEquipment = None
+    _cloneWristRopesSlotIndex = -1
     _lifeIdleIndex = 0
+    _handlingCellAttach = false
     BlockActivation(false)
 EndEvent
 
@@ -249,7 +260,7 @@ Function Advance()
     _clone.PlayIdle(DeadIdle)
     _cloneEquipment = Library.CloneWornArmor(_victim, _clone)
     If (!Library.SoftDependencies.IsWearingWristRestraints(_clone))
-        Library.AddWristRopesToEquipment(_clone, _cloneEquipment) ; ignore returned armor
+        _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment) ; ignore returned armor
     EndIf
     _clone.EquipItem(NooseCollarArmor, true, true)
     _clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
@@ -297,6 +308,7 @@ Event OnWorkshopObjectMoved(ObjectReference akReference)
 EndEvent
 
 Event OnCellAttach()
+    _handlingCellAttach = true
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
@@ -305,6 +317,7 @@ Event OnCellAttach()
         _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf
+    _handlingCellAttach = false
 EndEvent
 
 Event OnCellDetach()
@@ -323,7 +336,7 @@ Bool Function CutNoose()
     _victim.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
     _clone.EnableAI(false, true)
     _clone.StopTranslation()
-    _clone.MoveTo(player, 0.0, 0.0, 2048.0, false)
+    _clone.MoveTo(player, 0.0, 0.0, 4096.0, false)
     _victim.StopTranslation()
     If (DAngleZ != 0)
         _victim.SetAngle(0.0, 0.0, GetAngleZ() + DAngleZ)
@@ -396,7 +409,7 @@ Function Advance()
         _victim.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
         _clone.EnableAI(false, true)
         _clone.StopTranslation()
-        _clone.MoveTo(player, 0.0, 0.0, 2048.0, false)
+        _clone.MoveTo(player, 0.0, 0.0, 4096.0, false)
         _victim.StopTranslation()
         If (DAngleZ != 0)
             _victim.SetAngle(0.0, 0.0, GetAngleZ() + DAngleZ)
@@ -417,6 +430,7 @@ EndState
 State DeadVictim
 
 Event OnBeginState(string asOldState)
+    _clone.SetOverrideVoiceType(NpcNoLines)
     If (GetParentCell().IsAttached())
         _clone.SetUnconscious(true)
     Else
@@ -440,15 +454,17 @@ Event OnWorkshopObjectMoved(ObjectReference akReference)
 EndEvent
 
 Event OnCellAttach()
+    _handlingCellAttach = true
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(DeadIdle)
-        _clone.SetUnconscious(true)
         FixClonePosition()
         Utility.Wait(2.0) ; heuristical value
+        _clone.SetUnconscious(true)
         Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.EquipItem(NooseCollarArmor, true, true)
         StartTimer(300, TimerFixClonePosition)
     EndIf
+    _handlingCellAttach = false
 EndEvent
 
 Event OnCellDetach()
@@ -461,26 +477,46 @@ EndFunction
 
 Bool Function CutNoose()
     _clone.SetLinkedRef(None, GallowsLink)
-    Actor player = Game.GetPlayer()
-    If (GetParentCell().IsAttached())
+    Int waitCount = 0
+    While (_handlingCellAttach && waitCount < 180)
+        Utility.Wait(0.016)
+        waitCount += 1
+    EndWhile
+    Bool isAttached = GetParentCell().IsAttached()
+    If (isAttached)
         Float currentZ = _clone.Z
         Float lastZ = _clone.Z + 1 ; initialize to value > currentZ
+        Float previousLastZ = lastZ
         _clone.StopTranslation()
         _clone.SetValue(Paralysis, 1)
-        Int waitCount = 0
-        While (lastZ > currentZ && waitCount < 180)
+        waitCount = 0
+        While ((lastZ > currentZ || previousLastZ > lastZ) && waitCount < 300)
             Utility.Wait(0.016)
+            previousLastZ = lastZ
             lastZ = currentZ
             currentZ = _clone.Z
             waitCount += 1
         EndWhile
-        PushActorAway(_clone, 0) ; wait for ground hit to start ragdolling
-        Utility.Wait(3.0) ; heuristic time to finish ragdolling
+        PushActorAway(_clone, 0) ; wait for ground hit to start ragdolling, this prevents a bug where the victim sinks into the ground
+    EndIf
+    If (TeleportInOriginalVictimCorpse)
         _clone.DisableNoWait()
         _victim.MoveTo(_clone, 0, 0, 0, true)
     Else
-        _clone.DisableNoWait()
-        _victim.MoveTo(Self, DX, DY, DZ, true)
+        _clone.KillEssential()
+        If (_cloneWristRopesSlotIndex >= 0)
+            Library:EquippedItem e = _cloneEquipment[_cloneWristRopesSlotIndex]
+            _clone.UnequipItem(e.BaseItem, true, true)
+            _clone.RemoveItem(e.BaseItem, 1, true, None)
+            e.BaseItem = None
+        EndIf
+        _clone.UnequipItem(NooseCollarArmor, true, true)
+        _clone.RemoveItem(NooseCollarArmor, 1, true, None)
+        Library.TransferNonWornEquipmentAfterDeath(_victim, _clone, _cloneEquipment)
+        _clone.BlockActivation(false)
+        _clone.SetGhost(false)
+        Victims.RemoveRef(_clone)
+        _clone = None
     EndIf
     GotoState("Empty")
     Return true
