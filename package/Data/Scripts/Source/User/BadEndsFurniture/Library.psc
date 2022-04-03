@@ -60,7 +60,7 @@ Actor Function CreateNakedCloneGlobal(Actor akActor, RefCollectionAlias refColle
     clone.WaitFor3DLoad()
     clone.SetAlpha(0.0)
     clone.MoveTo(player, 0.0, 0.0, 512.0, false)
-    clone.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001) ; stay in positon
+    clone.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001)
     clone.RemoveAllItems()
     sdeps.PrepareCloneForAnimation(akActor, clone)
     String actorDisplayName = akActor.GetDisplayName()
@@ -159,32 +159,23 @@ EndFunction
 Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, ObjectReference akOtherContainer = None) Global
     Form[] baseItemsToKeep = new Form[0]
     sdeps.AddItemsToKeep(baseItemsToKeep)
-    Int slotIndex = 31
+    Int slotIndex = wornEquipment.Length - 1
     While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
-        Bool keepItem = false
-        If (slotIndex < wornEquipment.Length)
-            EquippedItem e = wornEquipment[slotIndex]
-            If (e.BaseItem != None)
+        EquippedItem e = wornEquipment[slotIndex]
+        If (e.BaseItem != None)
+            Int count = akActor.GetItemCount(e.BaseItem)
+            If (count > 1)
                 If (e.Item != None)
-                    Int count = akActor.GetItemCount(e.BaseItem)
-                    If (count > 1)
-                        akActor.UnequipItem(e.BaseItem, true, true)
-                        e.Item.Drop()
-                        akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
-                        akActor.AddItem(e.Item, 1, true)
-                    EndIf
+                    akActor.UnequipItem(e.BaseItem, true, true)
+                    e.Item.Drop()
+                    akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
+                    akActor.AddItem(e.Item, 1, true)
+                Else
+                    akActor.RemoveItem(e.BaseItem, count - 1, true, akOtherContainer)
                 EndIf
-                akActor.EquipItem(e.BaseItem, true, true)
-                baseItemsToKeep.Add(e.BaseItem)
-                keepItem = true
             EndIf
-        EndIf
-        If (!keepItem)
-            Form baseItem = akActor.GetWornItem(slotIndex).Item
-            If ((baseItem as Armor) != None || (baseItem as Weapon) != None)
-                akActor.UnequipItem(baseItem, true, true)
-                akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
-            EndIf
+            akActor.EquipItem(e.BaseItem, true, true)
+            baseItemsToKeep.Add(e.BaseItem)
         EndIf
         slotIndex -= 1
     EndWhile
@@ -193,6 +184,9 @@ Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment,
     While (index < inventory.Length)
         Form baseItem = inventory[index]
         If (baseItemsToKeep.Find(baseItem) < 0)
+            If ((baseItem as Armor) != None || (baseItem as Weapon) != None)
+                akActor.UnequipItem(baseItem, true, true)
+            EndIf
             akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
         EndIf
         index += 1

@@ -256,6 +256,12 @@ EndFunction
 Function Advance()
     _victim.BlockActivation(true, true)
     _victim.EvaluatePackage()
+    If (!_victim.GetParentCell().IsAttached())
+        _victim.MoveTo(player, 0.0, 0.0, 512.0, false)
+        _victim.TranslateTo(player.X, player.Y, player.Z + 512.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001)
+        _victim.SetAlpha(0.0)
+        Utility.Wait(3.0) ; heuristic
+    EndIf
     _clone = Library.CreateNakedClone(_victim, Victims)
     _clone.PlayIdle(DeadIdle)
     _cloneEquipment = Library.CloneWornArmor(_victim, _clone)
@@ -281,6 +287,8 @@ Event OnBeginState(string asOldState)
         _clone.SetAlpha(1.0)
         _clone.EnableAI(false, true)
         FixClonePosition()
+        _victim.StopTranslation()
+        _victim.SetAlpha(1.0)
         _victim.MoveTo(Library.WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
         _clone.EnableAI(true)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
@@ -291,10 +299,15 @@ Event OnBeginState(string asOldState)
         _clone.MoveTo(Self, DX, DY, DZ, true)
     EndIf
     StartTimer(LifeIdleTimes[_lifeIdleIndex], TimerAdvance)
+    BlockActivation(false)
 EndEvent
 
 Event OnLoad()
     ; do nothing
+EndEvent
+
+Event OnActivate(ObjectReference akActionRef)
+    CutNoose()
 EndEvent
 
 Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
@@ -312,10 +325,9 @@ Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
-        Utility.Wait(2.0) ; heuristical value
+        StartTimer(300, TimerFixClonePosition)
         Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.EquipItem(NooseCollarArmor, true, true)
-        StartTimer(300, TimerFixClonePosition)
     EndIf
     _handlingCellAttach = false
 EndEvent
@@ -381,6 +393,10 @@ Event OnLoad()
     ; do nothing
 EndEvent
 
+Event OnActivate(ObjectReference akActionRef)
+    CutNoose()
+EndEvent
+
 Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
     CutNoose()
 EndEvent
@@ -437,10 +453,15 @@ Event OnBeginState(string asOldState)
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, false)
     EndIf
+    BlockActivation(false)
 EndEvent
 
 Event OnLoad()
     ; do nothing
+EndEvent
+
+Event OnActivate(ObjectReference akActionRef)
+    CutNoose()
 EndEvent
 
 Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
@@ -458,11 +479,10 @@ Event OnCellAttach()
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.PlayIdle(DeadIdle)
         FixClonePosition()
-        Utility.Wait(2.0) ; heuristical value
-        _clone.SetUnconscious(true)
+        StartTimer(300, TimerFixClonePosition)
         Library.RestoreWornEquipment(_clone, _cloneEquipment)
         _clone.EquipItem(NooseCollarArmor, true, true)
-        StartTimer(300, TimerFixClonePosition)
+        _clone.SetUnconscious(true)
     EndIf
     _handlingCellAttach = false
 EndEvent
