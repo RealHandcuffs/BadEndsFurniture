@@ -10,6 +10,10 @@ BadEndsFurniture:Library Property Library Auto Const Mandatory
 Keyword Property GallowsLink Auto Const Mandatory
 Keyword Property PlayerSelectVictimLink Auto Const Mandatory
 Keyword Property WeaponTypeExplosive Auto Const Mandatory
+Message Property AbortingVictimSelection Auto Const Mandatory
+Message Property HangYourself Auto Const Mandatory
+Message Property PreparingHangingScene Auto Const Mandatory
+Message Property SelectVictimToHang Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
 VoiceType Property NpcNoLines Auto Const Mandatory
 
@@ -93,12 +97,12 @@ EndFunction
 ; select a victim for the gallows, called by activation and by perk
 Function SelectVictim(Actor akActor)
     If (akActor != None)
-        ; TODO verify
         Actor player = Game.GetPlayer()
         If (player.GetLinkedRef(PlayerSelectVictimLink) == Self)
             CancelTimer(TimerSelectVictimAbort)
             player.SetLinkedRef(None, PlayerSelectVictimLink)
         EndIf
+        ; TODO verify that victim is valid
         StartHangingScene(akActor, true)
     EndIf
 EndFunction
@@ -155,7 +159,7 @@ Event OnTimer(int aiTimerID)
         Actor player = Game.GetPlayer()
         If (player.GetLinkedRef(PlayerSelectVictimLink) == Self)
             player.SetLinkedRef(None, PlayerSelectVictimLink)
-            BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Aborting victim selection.")
+            AbortingVictimSelection.Show()
         EndIf
     EndIf
 EndEvent
@@ -205,15 +209,20 @@ Event OnActivate(ObjectReference akActionRef)
     ; show interaction or start a hanging scene
     Actor akActor = akActionRef as Actor
     If (akActor != None)
-        If (akActionRef == Game.GetPlayer())
+        Actor player = Game.GetPlayer()
+        If (akActionRef == player)
             ObjectReference linked = akActor.GetLinkedRef(PlayerSelectVictimLink)
             If (linked == Self)
-                CancelTimer(TimerSelectVictimAbort)
-                akActor.SetLinkedRef(None, PlayerSelectVictimLink)
-                BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Aborting victim selection.")
+                If (HangYourself.Show() == 0)
+                    SelectVictim(player)
+                Else
+                    CancelTimer(TimerSelectVictimAbort)
+                    akActor.SetLinkedRef(None, PlayerSelectVictimLink)
+                    AbortingVictimSelection.Show()
+                EndIf
             Else
                 akActor.SetLinkedRef(Self, PlayerSelectVictimLink)
-                BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Select a victim.")
+                SelectVictimToHang.Show()
                 StartTimer(15.0, TimerSelectVictimAbort)
             EndIf
         ElseIf (akActor.IsDoingFavor())
@@ -223,7 +232,7 @@ Event OnActivate(ObjectReference akActionRef)
 EndEvent
 
 Bool Function StartHangingScene(Actor akActor, Bool displayNotification = false)
-    If (akActor == None || akActor == Game.GetPlayer()) ; TODO support player
+    If (akActor == None)
         Return false
     EndIf
     If (_victim != None)
@@ -237,7 +246,7 @@ Bool Function StartHangingScene(Actor akActor, Bool displayNotification = false)
     Victims.AddRef(akActor)
     BlockActivation(true, true)
     If (displayNotification)
-        BadEndsFurniture:DebugWrapper.Notification(GetDisplayName() + ": Preparing to hang " + _victim.GetDisplayName())
+        PreparingHangingScene.Show()
     EndIf
     GotoState("SetupVictim")
     Return true
@@ -285,10 +294,26 @@ Bool Function CutNoose()
 EndFunction
 
 Function Advance()
+    If (_victim.IsInPowerArmor())
+        _victim.SwitchToPowerArmor(None)
+    EndIf
+    Actor player = Game.GetPlayer()
+    If (_victim == player)
+        Game.SetPlayerAIDriven(true)
+    EndIf
     _victim.BlockActivation(true, true)
     _victim.EvaluatePackage()
-    If (!_victim.GetParentCell().IsAttached())
-        Actor player = Game.GetPlayer()
+    If (_victim == player)
+        If (!GetParentCell().IsAttached())
+            Float angleZ = GetAngleZ() + DAngleZ
+            player.MoveTo(Self, DX + Math.Sin(angleZ) * 192.0, DY + Math.Cos(angleZ) * 192.0, DZ, true)
+            Int waitCount = 0
+            While (waitCount < 30 && !GetParentCell().IsAttached())
+                Utility.Wait(1.0)
+                waitCount += 1
+            EndWhile
+        EndIf
+    ElseIf (!_victim.GetParentCell().IsAttached())
         _victim.MoveTo(player, 0.0, 0.0, 512.0, false)
         _victim.TranslateTo(player.X, player.Y, player.Z + 512.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 10000, 0.0001)
         _victim.SetAlpha(0.0)
@@ -314,18 +339,24 @@ EndState
 State LifeVictim
 
 Event OnBeginState(string asOldState)
+    Actor player = Game.GetPlayer()
     _victim.BlockActivation(false)
     RegisterForRemoteEvent(_clone, "OnDeferredKill")
     RegisterForHitEvent(_clone)
     _clone.StartDeferredKill()
     _clone.IgnoreFriendlyHits(true)
-    If (GetParentCell().IsAttached())
+    If (_victim == player || GetParentCell().IsAttached())
         _clone.SetAlpha(1.0)
         _clone.EnableAI(false, true)
         FixClonePosition()
-        _victim.StopTranslation()
-        _victim.SetAlpha(1.0)
-        _victim.MoveTo(Library.WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
+        If (_victim == player)
+            Game.SetPlayerAIDriven(false)
+            LL_FourPlay.SetFlyCam(true)
+        Else
+            _victim.StopTranslation()
+            _victim.SetAlpha(1.0)
+            _victim.MoveTo(Library.WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
+        EndIf
         _clone.EnableAI(true)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         StartTimer(300, TimerFixClonePosition)
@@ -415,20 +446,45 @@ EndFunction
 
 Bool Function CutNoose()
     _clone.SetLinkedRef(None, GallowsLink)
+    CancelTimer(TimerAdvance)
     Actor player = Game.GetPlayer()
-    _victim.MoveTo(player, 0.0, 0.0, 3072.0, false)
-    _victim.WaitFor3DLoad()
-    _victim.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
-    _clone.EnableAI(false, true)
-    _clone.StopTranslation()
-    _clone.MoveTo(player, 0.0, 0.0, 4096.0, false)
-    _victim.StopTranslation()
-    If (DAngleZ != 0)
-        _victim.SetAngle(0.0, 0.0, GetAngleZ() + DAngleZ)
+    If (_victim == player)
+        Float currentZ = _clone.Z
+        Float lastZ = _clone.Z + 1 ; initialize to value > currentZ
+        Float previousLastZ = lastZ
+        _clone.StopTranslation()
+        Utility.Wait(0.1)
+        Int waitCount = 0
+        While ((lastZ > currentZ || previousLastZ > lastZ) && waitCount < 600)
+            Utility.Wait(0.016)
+            previousLastZ = lastZ
+            lastZ = currentZ
+            currentZ = _clone.Z
+            waitCount += 1
+        EndWhile
+        If (!_handlingDeferredKill)
+            Library.PlayBleedOutAnimation(_clone, 8.0)
+            Utility.Wait(1.9)
+            player.TranslateToRef(_clone, 10000, 10000)
+            Utility.Wait(0.1)
+            LL_FourPlay.SetFlyCam(false)
+            _clone.DisableNoWait()
+        EndIf
+    Else
+        _victim.MoveTo(player, 0.0, 0.0, 3072.0, false)
+        _victim.WaitFor3DLoad()
+        _victim.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
+        _clone.EnableAI(false, true)
+        _clone.StopTranslation()
+        _clone.MoveTo(player, 0.0, 0.0, 4096.0, false)
+        _victim.StopTranslation()
+        If (DAngleZ != 0)
+            _victim.SetAngle(0.0, 0.0, GetAngleZ() + DAngleZ)
+        EndIf
+        _victim.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
+        _clone.DisableNoWait()
+        Library.PlayBleedOutAnimationNoWait(_victim, 8.0)
     EndIf
-    _victim.MoveTo(Self, DX, DY, DZ, DAngleZ == 0)
-    _clone.DisableNoWait()
-    Library.PlayBleedOutAnimationNoWait(_victim, 8.0)
     GotoState("Empty")
     Return true
 EndFunction
@@ -499,12 +555,18 @@ Bool Function CutNoose()
 EndFunction
 
 Function Advance()
+    Actor player = Game.GetPlayer()
+    If (_victim == player)
+        player.TranslateToRef(_clone, 10000, 10000)
+        Utility.Wait(0.2)
+        player.SetAlpha(0.0)
+    EndIf
+    _victim.EndDeferredKill()
     _victim.KillEssential(None)
     If (_victim.IsDead())
         GotoState("DeadVictim")
     Else
         ; unable to kill victim, cut noose to free victim instead
-        Actor player = Game.GetPlayer()
         _victim.MoveTo(player, 0.0, 0.0, 3072.0, false)
         _victim.WaitFor3DLoad()
         _victim.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 0.0001, 0.0001)
@@ -580,6 +642,7 @@ EndEvent
 Event OnCellAttach()
     _handlingCellAttach = true
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
+        _clone.SetOverrideVoiceType(NpcNoLines)
         _clone.PlayIdle(DeadIdle)
         FixClonePosition()
         StartTimer(300, TimerFixClonePosition)
@@ -614,7 +677,7 @@ Bool Function CutNoose()
         _clone.SetValue(Paralysis, 1)
         Utility.Wait(0.1)
         waitCount = 0
-        While ((lastZ > currentZ || previousLastZ > lastZ) && waitCount < 300)
+        While ((lastZ > currentZ || previousLastZ > lastZ) && waitCount < 600)
             Utility.Wait(0.016)
             previousLastZ = lastZ
             lastZ = currentZ
