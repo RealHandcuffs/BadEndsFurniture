@@ -4,13 +4,14 @@
 ;
 Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
-Keyword Property GallowsLink Auto Const Mandatory
 ActorValue Property Paralysis Auto Const Mandatory
-Keyword Property PlayerSelectVictimLink Auto Const Mandatory
-BadEndsFurniture:Library Property Library Auto Const Mandatory
 Armor Property NooseCollarArmor Auto Const Mandatory
-VoiceType Property NpcNoLines Auto Const Mandatory
+BadEndsFurniture:Library Property Library Auto Const Mandatory
+Keyword Property GallowsLink Auto Const Mandatory
+Keyword Property PlayerSelectVictimLink Auto Const Mandatory
+Keyword Property WeaponTypeExplosive Auto Const Mandatory
 RefCollectionAlias Property Victims Auto Const Mandatory
+VoiceType Property NpcNoLines Auto Const Mandatory
 
 Actor _victim
 Actor _clone
@@ -18,6 +19,7 @@ Library:EquippedItem[] _cloneEquipment
 Int _cloneWristRopesSlotIndex
 Int _lifeIdleIndex
 Bool _handlingCellAttach
+Bool _handlingDeferredKill
 
 ;
 ; Must be set to an array of idles that will play sequentially.
@@ -127,6 +129,16 @@ Event OnLoad()
     GotoState("Empty") ; initialize after construction
 EndEvent
 
+Event Actor.OnDeferredKill(Actor sender, Actor akKiller)
+    If (sender != _clone)
+        UnregisterForRemoteEvent(sender, "OnDeferredKill") ; not expected but handle it
+    EndIf
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
+    ; do nothing
+EndEvent
+
 Int Property TimerAdvance = 1 AutoReadOnly
 Int Property TimerFixClonePosition = 2 AutoReadOnly
 Int Property TimerSelectVictimAbort = 3 AutoReadOnly
@@ -162,6 +174,8 @@ Event OnBeginState(string asOldState)
         _victim = None
     EndIf
     If (_clone != None)
+        UnregisterForAllHitEvents(_clone)                  ; may do nothing
+        UnregisterForRemoteEvent(_clone, "OnDeferredKill") ; same
         Victims.RemoveRef(_clone)
         _clone.DisableNoWait(false)
         _clone.Delete()
@@ -171,10 +185,19 @@ Event OnBeginState(string asOldState)
     _cloneWristRopesSlotIndex = -1
     _lifeIdleIndex = 0
     _handlingCellAttach = false
+    _handlingDeferredKill = false
     BlockActivation(false)
 EndEvent
 
 Event OnLoad()
+    ; do nothing
+EndEvent
+
+Event Actor.OnDeferredKill(Actor sender, Actor akKiller)
+    ; do nothing
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
     ; do nothing
 EndEvent
 
@@ -237,6 +260,14 @@ Event OnLoad()
     ; do nothing
 EndEvent
 
+Event Actor.OnDeferredKill(Actor sender, Actor akKiller)
+    ; do nothing
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
+    ; do nothing
+EndEvent
+
 Event OnWorkshopObjectDestroyed(ObjectReference akActionRef)
     CutNoose()
 EndEvent
@@ -257,8 +288,9 @@ Function Advance()
     _victim.BlockActivation(true, true)
     _victim.EvaluatePackage()
     If (!_victim.GetParentCell().IsAttached())
+        Actor player = Game.GetPlayer()
         _victim.MoveTo(player, 0.0, 0.0, 512.0, false)
-        _victim.TranslateTo(player.X, player.Y, player.Z + 512.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001)
+        _victim.TranslateTo(player.X, player.Y, player.Z + 512.0, 0.0, 0.0, _victim.GetAngleZ() + 3.1416, 10000, 0.0001)
         _victim.SetAlpha(0.0)
         Utility.Wait(3.0) ; heuristic
     EndIf
@@ -283,6 +315,10 @@ State LifeVictim
 
 Event OnBeginState(string asOldState)
     _victim.BlockActivation(false)
+    RegisterForRemoteEvent(_clone, "OnDeferredKill")
+    RegisterForHitEvent(_clone)
+    _clone.StartDeferredKill()
+    _clone.IgnoreFriendlyHits(true)
     If (GetParentCell().IsAttached())
         _clone.SetAlpha(1.0)
         _clone.EnableAI(false, true)
@@ -294,16 +330,53 @@ Event OnBeginState(string asOldState)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         StartTimer(300, TimerFixClonePosition)
     Else
+        _victim.StopTranslation()
+        _victim.SetAlpha(1.0)
+        _victim.MoveTo(Library.WorkshopHoldingCellMarker, 0.0, 0.0, 0.0, false)
         _clone.SetAlpha(1.0)
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, true)
     EndIf
     StartTimer(LifeIdleTimes[_lifeIdleIndex], TimerAdvance)
     BlockActivation(false)
+    _clone.SetGhost(false)
+    If (_victim.IsDead())
+        _handlingDeferredKill = true
+        Var[] args = new Var[1]
+        args[0] = "DyingVictim"
+        CallFunctionNoWait("GotoState", args)
+    EndIf
 EndEvent
 
 Event OnLoad()
     ; do nothing
+EndEvent
+
+Event Actor.OnDeferredKill(Actor sender, Actor akKiller)
+    If (sender == _clone)
+        If (!_handlingDeferredKill)
+            _handlingDeferredKill = true
+            GotoState("DyingVictim")
+        EndIf
+    Else
+        UnregisterForRemoteEvent(sender, "OnDeferredKill") ; not expected but handle it
+    EndIf
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
+    If (akTarget == _clone)
+        If (_handlingDeferredKill)
+            _clone.PlayIdle(DeadIdle)
+        Else
+            _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
+        EndIf
+        If (akSource != None && akSource.HasKeyword(WeaponTypeExplosive))
+            Utility.Wait(0.25)
+            CutNoose()
+        Else
+            RegisterForHitEvent(_clone)
+        EndIf
+    EndIf
 EndEvent
 
 Event OnActivate(ObjectReference akActionRef)
@@ -386,11 +459,23 @@ State DyingVictim
     
 Event OnBeginState(string asOldState)
     ; just advance to the next state
+    CancelTimer(TimerAdvance)
     CallFunctionNoWait("Advance", new Var[0])
 EndEvent
 
 Event OnLoad()
     ; do nothing
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
+    If (akTarget == _clone)
+        _clone.PlayIdle(DeadIdle)
+        If (akSource != None && akSource.HasKeyword(WeaponTypeExplosive))
+            CutNoose()
+        Else
+            RegisterForHitEvent(_clone)
+        EndIf
+    EndIf
 EndEvent
 
 Event OnActivate(ObjectReference akActionRef)
@@ -449,15 +534,33 @@ Event OnBeginState(string asOldState)
     _clone.SetOverrideVoiceType(NpcNoLines)
     If (GetParentCell().IsAttached())
         _clone.SetUnconscious(true)
+        If (_handlingDeferredKill)
+            _clone.PlayIdle(DeadIdle)
+        EndIf
     Else
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, false)
     EndIf
     BlockActivation(false)
+    UnregisterForRemoteEvent(_clone, "OnDeferredKill")
+    If (_clone.IsDismembered("Head1"))
+        CallFunctionNoWait("CutNoose", new Var[0])
+    EndIf
 EndEvent
 
 Event OnLoad()
     ; do nothing
+EndEvent
+
+Event OnHit(ObjectReference akTarget, ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked, String apMaterial)
+    If (akTarget == _clone)
+        _clone.PlayIdle(DeadIdle)
+        If (akSource != None && akSource.HasKeyword(WeaponTypeExplosive))
+            CutNoose()
+        Else
+            RegisterForHitEvent(_clone)
+        EndIf
+    EndIf
 EndEvent
 
 Event OnActivate(ObjectReference akActionRef)
@@ -509,6 +612,7 @@ Bool Function CutNoose()
         Float previousLastZ = lastZ
         _clone.StopTranslation()
         _clone.SetValue(Paralysis, 1)
+        Utility.Wait(0.1)
         waitCount = 0
         While ((lastZ > currentZ || previousLastZ > lastZ) && waitCount < 300)
             Utility.Wait(0.016)
@@ -519,6 +623,7 @@ Bool Function CutNoose()
         EndWhile
         PushActorAway(_clone, 0) ; wait for ground hit to start ragdolling, this prevents a bug where the victim sinks into the ground
     EndIf
+    _clone.EndDeferredKill()
     If (TeleportInOriginalVictimCorpse)
         _clone.DisableNoWait()
         _victim.MoveTo(_clone, 0, 0, 0, true)
