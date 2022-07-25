@@ -5,8 +5,13 @@ Scriptname BadEndsFurniture:Library extends Quest
 
 Action Property ActionBleedoutStart Auto Const Mandatory
 Action Property ActionBleedoutStop Auto Const Mandatory
+ActorBase Property CloneHumanGhoul Auto Const
 Armor[] Property WristRopeArmorArray Auto Const Mandatory
+FormList Property RaceHumanGhoulList Auto Const Mandatory
+LeveledActor Property TemplateCloneHumanGhoul Auto Const
 ObjectReference Property WorkshopHoldingCellMarker Auto Const Mandatory
+
+Bool _cloneLock = false
 
 BadEndsFurniture:SoftDependencies Property SoftDependencies
     BadEndsFurniture:SoftDependencies Function Get()
@@ -37,19 +42,37 @@ EndFunction
 
 ; create a naked clone of an actor, the clone will end up as an invisible (alpha = 0.0) ghost in a translation
 Actor Function CreateNakedClone(Actor akActor, RefCollectionAlias refCollectionAliasToAdd = None)
-    Return CreateNakedCloneGlobal(akActor, refCollectionAliasToAdd, SoftDependencies)
+    Actor clone = CreateInvisibleClone(akActor, refCollectionAliasToAdd)
+    Return SetUpAdvancedClonePropertiesGlobal(akActor, clone, SoftDependencies)
 EndFunction
 
-Actor Function CreateNakedCloneGlobal(Actor akActor, RefCollectionAlias refCollectionAliasToAdd, BadEndsFurniture:SoftDependencies sdeps) Global
+Actor Function CreateInvisibleClone(Actor akActor, RefCollectionAlias refCollectionAliasToAdd)
+    Actor player = Game.GetPlayer()
     ActorBase leveledActorBase = akActor.GetLeveledActorBase()
     ActorBase cloneBase = leveledActorBase.GetTemplate(true)
     If (cloneBase == None)
         cloneBase = leveledActorBase
     EndIf
-    Actor player = Game.GetPlayer()
-    Actor clone = player.PlaceAtMe(cloneBase, 1, false, true, false) as Actor ; initially disabled
-    clone.RemoveFromAllFactions()
-    clone.SetValue(Game.GetAggressionAV(), 0)
+    Actor clone
+    Bool releaseLock = false
+    If (RaceHumanGhoulList.HasForm(cloneBase.GetRace()))
+        ; prefer to use leveled actor base cloning procedure
+        Int waitCount = 0
+        While (_cloneLock && waitCount < 30)
+            Utility.WaitMenuMode(0.1)
+            waitCount += 1
+        EndWhile
+        _cloneLock = true
+        releaseLock = true
+        TemplateCloneHumanGhoul.Revert()
+        TemplateCloneHumanGhoul.AddForm(cloneBase as Form, 1)
+        clone = player.PlaceAtMe(CloneHumanGhoul, 1, false, true, false) as Actor
+    Else
+        ; fall back to direct cloning
+        clone = player.PlaceAtMe(cloneBase, 1, false, true, false) as Actor
+        clone.RemoveFromAllFactions()
+        clone.SetValue(Game.GetAggressionAV(), 0)
+    EndIf
     If (refCollectionAliasToAdd != None)
         refCollectionAliasToAdd.AddRef(clone) ; for AI package
     EndIf
@@ -57,10 +80,17 @@ Actor Function CreateNakedCloneGlobal(Actor akActor, RefCollectionAlias refColle
     clone.BlockActivation(true, true)
     clone.MoveTo(player, 0.0, 0.0, 3072.0, false)
     clone.EnableNoWait()
+    If (releaseLock)
+        _cloneLock = false ; only after clone has been enabled
+    EndIf
     clone.WaitFor3DLoad()
     clone.SetAlpha(0.0)
     clone.MoveTo(player, 0.0, 0.0, 512.0, false)
     clone.TranslateTo(player.X, player.Y, player.Z + 3072.0, 0.0, 0.0, clone.GetAngleZ() + 3.1416, 10000, 0.0001)
+    Return clone
+EndFunction
+
+Actor Function SetUpAdvancedClonePropertiesGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps) Global
     clone.RemoveAllItems()
     sdeps.PrepareCloneForAnimation(akActor, clone)
     String actorDisplayName = akActor.GetDisplayName()

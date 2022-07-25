@@ -9,6 +9,7 @@ Armor Property NooseCollarArmor Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 Keyword Property GallowsLink Auto Const Mandatory
 Keyword Property PlayerSelectVictimLink Auto Const Mandatory
+Keyword Property VATSRestrictedTargetKeyword Auto Const Mandatory
 Keyword Property WeaponTypeExplosive Auto Const Mandatory
 Message Property AbortingVictimSelection Auto Const Mandatory
 Message Property HangYourself Auto Const Mandatory
@@ -593,6 +594,7 @@ EndState
 State DeadVictim
 
 Event OnBeginState(string asOldState)
+    _clone.AddKeyword(VATSRestrictedTargetKeyword)
     _clone.SetOverrideVoiceType(NpcNoLines)
     If (GetParentCell().IsAttached())
         _clone.SetUnconscious(true)
