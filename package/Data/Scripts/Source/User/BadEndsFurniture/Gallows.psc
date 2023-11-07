@@ -645,6 +645,7 @@ Event OnCellAttach()
     _handlingCellAttach = true
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
         _clone.SetOverrideVoiceType(NpcNoLines)
+        _clone.SetUnconscious(false)
         _clone.PlayIdle(DeadIdle)
         FixClonePosition()
         StartTimer(300, TimerFixClonePosition)

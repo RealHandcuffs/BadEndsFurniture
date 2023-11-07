@@ -38,7 +38,7 @@ Function Refresh()
     Bool oldRealHandcuffsInstalled = RealHandcuffsInstalled
     RealHandcuffsInstalled = Game.IsPluginInstalled(RealHandcuffsEsp)
     If (RealHandcuffsInstalled && !oldRealHandcuffsInstalled)
-        UpdateRealHandcufs()
+        UpdateRealHandcuffs()
     EndIf
     Bool oldDeviousDevicesInstalled = DeviousDevicesInstalled
     DeviousDevicesInstalled = Game.IsPluginInstalled(DeviousDevicesEsm)
@@ -47,7 +47,7 @@ Function Refresh()
     EndIf
 EndFunction
 
-Function UpdateRealHandcufs()
+Function UpdateRealHandcuffs()
     FormList boundHandsGenericFurnitureList = Game.GetFormFromFile(0x000858, RealHandcuffsEsp) as FormList
     If (!boundHandsGenericFurnitureList.HasForm(Gallows))
         boundHandsGenericFurnitureList.AddForm(Gallows)
