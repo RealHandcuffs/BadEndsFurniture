@@ -98,6 +98,7 @@ fi
 # search for Fallout 4 Creation Kit
 # if "Fallout 4 Creation Kit" folder is in tools directory (probably symlink), this is used
 # otherwise try to find it in the same folder as Fallout 4
+# if not there, try to find the install location in the registry
 if [[ -d "tools/Fallout 4 Creation Kit" ]]
 then
   [[ $GENERATE == 0 ]] && echo "Fallout 4 Creation Kit: In tools directory."
@@ -111,6 +112,15 @@ else
   then
     DIR_FALLOUT4CREATIONKIT="$DIR_FALLOUT4"
     [[ $GENERATE == 0 ]] && echo "Fallout 4 Creation Kit: In Fallout 4 directory."
+  else
+    REGISTRY=$(reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 1946160") || { >&2 echo "ERROR: Unable to find Fallout 4 Creation Kit registry key."; exit 2; }
+    PATH_FALLOUT4CREATIONKIT=$(echo "$REGISTRY" | sed -rn "s/\s*InstallLocation\s+REG_SZ\s+(.*)/\1/p" | sed -e 's/\\/\//g' -e 's/://')
+    PATH_FALLOUT4CREATIONKIT="/${PATH_FALLOUT4CREATIONKIT%/}"
+    if [[ -d "$PATH_FALLOUT4CREATIONKIT" ]]
+    then
+      DIR_FALLOUT4CREATIONKIT="$PATH_FALLOUT4CREATIONKIT"
+      [[ $GENERATE == 0 ]] && echo "Fallout 4 Creation Kit: $DIR_FALLOUT4CREATIONKIT"
+    fi
   fi
 fi
 
