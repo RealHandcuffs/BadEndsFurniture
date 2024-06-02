@@ -7,3 +7,7 @@ Initial release with hanging.
 
 0.1 Beta 3
 - Try to fix missing expressions when returning to cell containing dead victims
+
+0.1 Beta 4
+- Add support for Kziid Fetish Toolset: Both restraints and gags will now work correctly, while the victim is struggling and when the victim hanging dead
+- Fix various compatibility issues

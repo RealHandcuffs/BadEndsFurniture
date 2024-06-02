@@ -7,20 +7,29 @@ Activator Property Gallows Auto Const Mandatory
 
 Bool Property RealHandcuffsInstalled = False Auto
 Bool Property DeviousDevicesInstalled = False Auto
+Bool Property KziidFetishToolsetInstalled = False Auto
 
 Group Plugins
     String Property RealHandcuffsEsp = "RealHandcuffs.esp" AutoReadOnly
     String Property DeviousDevicesEsm = "Devious Devices.esm" AutoReadOnly
+    String Property KziidFetishToolset = "KziitdFetishToolset.esm" AutoReadOnly
 EndGroup
 
 Group RealHandcuffs
     Quest Property RH_MainQuest = None Auto
     Keyword Property RH_NoPackage = None Auto
+    Keyword Property RH_Restraint = None Auto
     MiscObject Property RH_NpcToken = None Auto
 EndGroup
 
 Group DeviousDevices
     Keyword Property DD_kw_ItemType_WristCuffs = None Auto
+EndGroup
+
+Group KziidFetishToolset
+    ScriptObject Property KZEB_API = None Auto
+    Keyword Property KZEB_Device = None Auto
+    Keyword Property KZEB_DeviceType_Boundhands = None Auto
 EndGroup
 
 ;
@@ -29,6 +38,7 @@ EndGroup
 Function Clear()
     RealHandcuffsInstalled = false
     DeviousDevicesInstalled = false
+    KziidFetishToolsetInstalled = false
 EndFunction
 
 ;
@@ -45,6 +55,11 @@ Function Refresh()
     If (DeviousDevicesInstalled && !oldDeviousDevicesInstalled)
         UpdateDeviousDevices()
     EndIf
+    Bool oldKziidFetishToolsetInstalled = KziidFetishToolsetInstalled
+    KziidFetishToolsetInstalled = Game.IsPluginInstalled(KziidFetishToolset)
+    If (KziidFetishToolsetInstalled && !oldKziidFetishToolsetInstalled)
+        UpdateKziidFetishToolset()
+    EndIf
 EndFunction
 
 Function UpdateRealHandcuffs()
@@ -54,6 +69,7 @@ Function UpdateRealHandcuffs()
     EndIf
     RH_MainQuest = Game.GetFormFromFile(0x000F99, RealHandcuffsEsp) as Quest
     RH_NoPackage = Game.GetFormFromFile(0x000860, RealHandcuffsEsp) as Keyword
+    RH_Restraint = Game.GetFormFromFile(0x000009, RealHandcuffsEsp) as Keyword
     RH_NpcToken =  Game.GetFormFromFile(0x000803, RealHandcuffsEsp) as MiscObject
 EndFunction
 
@@ -61,6 +77,12 @@ Function UpdateDeviousDevices()
     DD_kw_ItemType_WristCuffs = Game.GetFormFromFile(0x01196C, DeviousDevicesEsm) as Keyword
 EndFunction
 
+Function UpdateKziidFetishToolset()
+    Quest KZEB_MainQuest = Game.GetFormFromFile(0x00924A, KziidFetishToolset) as Quest
+    KZEB_API = KZEB_MainQuest.CastAs("KZEB:KZEB_API")
+    KZEB_Device = KZEB_API.GetPropertyValue("KZEB_Device") as Keyword
+    KZEB_DeviceType_Boundhands = KZEB_API.GetPropertyValue("KZEB_DeviceType_BoundHands") as Keyword
+EndFunction
 
 ;
 ; Prepare a visual clone.
@@ -69,6 +91,19 @@ Function PrepareCloneForAnimation(Actor akActor, Actor clone)
     If (RealHandcuffsInstalled)
         clone.AddKeyword(RH_NoPackage)
     EndIf
+EndFunction
+
+;
+; Check if an item is a special item
+;
+Bool Function IsSpecialItem(Armor baseItem)
+    If (RealHandcuffsInstalled && baseItem.HasKeyword(RH_Restraint))
+        Return true
+    EndIf
+    If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device))
+        Return true
+    EndIf
+    Return false
 EndFunction
 
 ;
@@ -84,6 +119,41 @@ Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference ite
             restraintBase.CallFunction("ForceEquip", args)
             Return true
         EndIf
+    EndIf
+    If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device))
+        Var[] args = new Var[4]
+        args[0] = akActor
+        If (item != None)
+            args[1] = item
+        Else
+            args[1] = baseItem
+        EndIf
+        args[2] = true
+        args[3] = true
+        KZEB_API.CallFunction("EquipDevice", args)
+        Return true
+    EndIf
+    Return False
+EndFunction
+
+;
+; Try to unequip a special item from an actor.
+;
+Bool Function UnequipSpecialItem(Actor akActor, Form baseItem, ObjectReference item)
+    If (RealHandcuffsInstalled && item != None)
+        ScriptObject restraintBase = item.CastAs("RealHandcuffs:RestraintBase")
+        If (restraintBase != None)
+            restraintBase.CallFunction("ForceUnequip", new Var[0])
+            Return true
+        EndIf
+    EndIf
+    If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device))
+        Var[] args = new Var[3]
+        args[0] = akActor
+        args[1] = baseItem
+        args[2] = false
+        KZEB_API.CallFunction("UnequipDevice", args)
+        Return true
     EndIf
     Return False
 EndFunction
@@ -108,6 +178,11 @@ Bool Function IsWearingWristRestraints(Actor akActor)
     EndIf
     If (DeviousDevicesInstalled)
         If (akActor.WornHasKeyword(DD_kw_ItemType_WristCuffs))
+            Return true
+        EndIf
+    EndIf
+    If (KziidFetishToolsetInstalled)
+        If (akActor.WornHasKeyword(KZEB_DeviceType_Boundhands))
             Return true
         EndIf
     EndIf

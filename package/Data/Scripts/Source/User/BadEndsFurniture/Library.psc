@@ -6,6 +6,7 @@ Scriptname BadEndsFurniture:Library extends Quest
 Action Property ActionBleedoutStart Auto Const Mandatory
 Action Property ActionBleedoutStop Auto Const Mandatory
 ActorBase Property CloneHumanGhoul Auto Const
+Armor Property NooseCollarArmor Auto Const Mandatory
 Armor[] Property WristRopeArmorArray Auto Const Mandatory
 FormList Property RaceHumanGhoulList Auto Const Mandatory
 LeveledActor Property TemplateCloneHumanGhoul Auto Const
@@ -103,66 +104,67 @@ EndFunction
 
 ; struct for worn equipment
 Struct EquippedItem
-    Form baseItem = None
-    ObjectReference item = None
+    Form BaseItem = None
+    ObjectReference Item = None
+    Bool IsSpecialItem = False
 EndStruct
 
 
-; clone the worn armor of an actor and equip it on another actor, usually a clone
-EquippedItem[] Function CloneWornArmor(Actor akActor, Actor clone)
-    Return CloneWornArmorGlobal(akActor, clone, SoftDependencies)
+; clone the worn armor of an actor and add it to another actor, usually a clone
+EquippedItem[] Function CloneWornArmor(Actor akActor, Actor clone, Bool equipClonedArmor)
+    Return CloneWornArmorGlobal(akActor, clone, SoftDependencies, equipClonedArmor, NooseCollarArmor)
 EndFunction
 
-EquippedItem[] Function CloneWornArmorGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps) Global
+EquippedItem[] Function CloneWornArmorGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps, Bool equipClonedArmor, Armor dummyArmor) Global
     EquippedItem[] clonedArmor = new EquippedItem[0]
     Int slotIndex = 0
+    Armor[] foundArmor = new Armor[0]
     While (slotIndex <= 31) ; follow precedence low-to-high for detecting items
         Armor baseItem = akActor.GetWornItem(slotIndex).Item as Armor
         If (baseItem != None)
             While (clonedArmor.Length < slotIndex)
                 clonedArmor.Add(new EquippedItem)
+                foundArmor.Add(dummyArmor) ; because None is causing issues
             EndWhile
             EquippedItem e = new EquippedItem
             e.BaseItem = baseItem
-            ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
-            If (objectMods.Length > 0)
-                ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
-                item.RemoveAllMods()
-                Int modIndex = 0
-                While (modIndex < objectMods.Length)
-                    item.AttachMod(objectMods[modIndex])
-                    modIndex += 1
-                EndWhile
-                clone.AddItem(item, 1, true)
-                e.Item = item
+            Int existingIndex = foundArmor.Find(baseItem)
+            If (existingIndex < 0)
+                ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
+                If (objectMods.Length > 0)
+                    ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
+                    item.RemoveAllMods()
+                    Int modIndex = 0
+                    While (modIndex < objectMods.Length)
+                        item.AttachMod(objectMods[modIndex])
+                        modIndex += 1
+                    EndWhile
+                    clone.AddItem(item, 1, true)
+                    e.Item = item
+                EndIf
+                e.IsSpecialItem = sdeps.IsSpecialItem(baseItem)
+            Else
+                e.Item = clonedArmor[existingIndex].Item
+                e.IsSpecialItem = clonedArmor[existingIndex].IsSpecialItem
             EndIf
             clonedArmor.Add(e)
+            foundArmor.Add(baseItem)
         EndIf
         slotIndex += 1
     EndWhile
-    slotIndex = clonedArmor.Length - 1;
-    While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
-        EquippedItem e = clonedArmor[slotIndex]
-        If (e.BaseItem != None)
-            If (!sdeps.EquipSpecialItem(clone, e.BaseItem, e.Item))
-                clone.EquipItem(e.BaseItem, true, true)
-            EndIf
-        EndIf
-        slotIndex -= 1
-    EndWhile
+    If (equipClonedArmor)
+        RestoreWornEquipmentGlobal(akActor, clonedArmor, sdeps, false, None)
+    EndIf
     Return clonedArmor
 EndFunction
 
 
 ; Add wrist ropes the worn equipment of an actor
-Int Function AddWristRopesToEquipment(Actor akActor, EquippedItem[] wornEquipment)
-    If (!SoftDependencies.DeviousDevicesInstalled)
-        Return -1 ; wrist ropes model is from devious devices
-    EndIf
-    Return AddWristRopesToEquipmentGlobal(akActor, wornEquipment, WristRopeArmorArray)
+Int Function AddWristRopesToEquipment(Actor akActor, EquippedItem[] wornEquipment, Bool doEquip)
+    Return AddWristRopesToEquipmentGlobal(akActor, wornEquipment, WristRopeArmorArray, doEquip)
 EndFunction
 
-Int Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] armorArray) Global
+Int Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor[] armorArray, Bool doEquip) Global
     Int startSlotIndex = 32 - armorArray.Length
     Int slotIndex = startSlotIndex
     While (slotIndex <= 31) ; follow precedence low-to-high
@@ -172,7 +174,9 @@ Int Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEq
         EquippedItem e = wornEquipment[slotIndex]
         If (e.BaseItem == None)
             e.BaseItem = armorArray[slotIndex - startSlotIndex]
-            akActor.EquipItem(e.BaseItem, true, true)
+            If (doEquip)
+                akActor.EquipItem(e.BaseItem, true, true)
+            EndIf
             Return slotIndex
         EndIf
         slotIndex += 1
@@ -181,45 +185,122 @@ Int Function AddWristRopesToEquipmentGlobal(Actor akActor, EquippedItem[] wornEq
 EndFunction
 
 
-; restore the worn armor of an actor, necessary when the cell has been loaded
-Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment, ObjectReference akOtherContainer = None)
+; Add noose collar rope to the worn equipment of an actor
+Int Function AddNooseCollarRopeToEquipment(Actor akActor, EquippedItem[] wornEquipment, Bool doEquip)
+    Return AddNooseCollarRopeToEquipmentGlobal(akActor, wornEquipment, NooseCollarArmor, doEquip)
+EndFunction
+
+Int Function AddNooseCollarRopeToEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, Armor nooseCollarArmor, Bool doEquip) Global
+    Int slotIndex = 16
+    While (wornEquipment.Length <= slotIndex)
+        wornEquipment.Add(new EquippedItem)
+    EndWhile
+    EquippedItem e = wornEquipment[slotIndex]
+    If (e.BaseItem == None)
+        e.BaseItem = nooseCollarArmor
+        If (doEquip)
+            akActor.EquipItem(e.BaseItem, true, true)
+        EndIf
+        Return slotIndex
+    EndIf
+    Return -1
+EndFunction
+
+
+; restore the worn armor of an actor, necessary when the cell has been loaded or when it has not been restored when cloning worn armor
+Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment, Bool cleanUp, ObjectReference akOtherContainer = None)
     RestoreWornEquipmentGlobal(akActor, wornEquipment, SoftDependencies, akOtherContainer)
 EndFunction
 
-Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, ObjectReference akOtherContainer = None) Global
+Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, Bool cleanUp, ObjectReference akOtherContainer = None) Global
     Form[] baseItemsToKeep = new Form[0]
-    sdeps.AddItemsToKeep(baseItemsToKeep)
-    Int slotIndex = wornEquipment.Length - 1
-    While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
-        EquippedItem e = wornEquipment[slotIndex]
-        If (e.BaseItem != None)
-            Int count = akActor.GetItemCount(e.BaseItem)
-            If (count > 1)
-                If (e.Item != None)
-                    akActor.UnequipItem(e.BaseItem, true, true)
-                    e.Item.Drop()
-                    akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
-                    akActor.AddItem(e.Item, 1, true)
-                Else
-                    akActor.RemoveItem(e.BaseItem, count - 1, true, akOtherContainer)
+    If (cleanUp)
+        sdeps.AddItemsToKeep(baseItemsToKeep)
+    Endif
+    Int pass = 0 ; first pass: regular items, second pass: special items
+    Bool hasSpecialItems = false
+    Form[] processedItems = new Form[0]
+    While (pass == 0 || pass == 1 && hasSpecialItems)
+        If (hasSpecialItems)
+            Utility.Wait(0.1) ; allow time for pending events to finish
+        EndIf
+        Int slotIndex = wornEquipment.Length - 1
+        While (slotIndex >= 0) ; use reverse precedence high-to-low for equipping items
+            EquippedItem e = wornEquipment[slotIndex]
+            If (e.BaseItem != None)
+                Bool isSpecialItem = e.IsSpecialItem
+                hasSpecialItems = hasSpecialItems || isSpecialItem
+                If ((pass == 0 && !isSpecialItem || pass == 1 && isSpecialItem) && processedItems.Find(e.BaseItem) < 0)
+                    If (cleanUp)
+                        Int count = akActor.GetItemCount(e.BaseItem)
+                        If (count > 1)
+                            If (e.Item != None)
+                                akActor.UnequipItem(e.BaseItem, true, true)
+                                e.Item.Drop()
+                                akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
+                                akActor.AddItem(e.Item, 1, true)
+                            Else
+                                akActor.RemoveItem(e.BaseItem, count - 1, true, akOtherContainer)
+                            EndIf
+                        EndIf
+                        baseItemsToKeep.Add(e.BaseItem)
+                    Endif
+                    If (!isSpecialItem || !sdeps.EquipSpecialItem(akActor, e.BaseItem, e.Item))
+                        akActor.EquipItem(e.BaseItem, true, true)
+                    EndIf
+                    processedItems.Add(e.BaseItem)
                 EndIf
             EndIf
-            akActor.EquipItem(e.BaseItem, true, true)
-            baseItemsToKeep.Add(e.BaseItem)
-        EndIf
-        slotIndex -= 1
+            slotIndex -= 1
+        EndWhile
+        pass += 1
     EndWhile
-    Form[] inventory = akActor.GetInventoryItems()
-    Int index = 0
-    While (index < inventory.Length)
-        Form baseItem = inventory[index]
-        If (baseItemsToKeep.Find(baseItem) < 0)
-            If ((baseItem as Armor) != None || (baseItem as Weapon) != None)
-                akActor.UnequipItem(baseItem, true, true)
+    If (cleanUp)
+        Form[] inventory = akActor.GetInventoryItems()
+        Int index = 0
+        While (index < inventory.Length)
+            Form baseItem = inventory[index]
+            If (baseItemsToKeep.Find(baseItem) < 0)
+                If ((baseItem as Armor) != None || (baseItem as Weapon) != None)
+                    akActor.UnequipItem(baseItem, true, true)
+                EndIf
+                akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
             EndIf
-            akActor.RemoveItem(baseItem, -1, true, akOtherContainer)
+            index += 1
+        EndWhile
+    EndIf
+EndFunction
+
+
+; unequip worn armor of an actor
+Function UnequipWornEquipment(Actor akActor, EquippedItem[] wornEquipment, Bool specialItemsOnly)
+    UnequipWornEquipmentGlobal(akActor, wornEquipment, SoftDependencies, specialitemsOnly)
+EndFunction
+
+Function UnequipWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, Bool specialitemsOnly) Global
+    Int pass = 0 ; first pass: special items, second pass: regular items
+    Bool hasRegularItems = false
+    Form[] processedItems = new Form[0]
+    While (pass == 0 || pass == 1 && hasRegularItems && !specialItemsOnly)
+        If (hasRegularItems)
+            Utility.Wait(0.1) ; allow time for pending events to finish
         EndIf
-        index += 1
+        Int slotIndex = 0
+        While (slotIndex < wornEquipment.Length) ; use precedence low-to-high for unequipping items
+            EquippedItem e = wornEquipment[slotIndex]
+            If (e.BaseItem != None)
+                Bool isSpecialItem = e.IsSpecialItem
+                hasRegularItems = hasRegularItems || !isSpecialItem
+                If ((pass == 0 && isSpecialItem || pass == 1 && !isSpecialItem) && processedItems.Find(e.BaseItem) < 0)
+                    If (!isSpecialItem || !sdeps.UnequipSpecialItem(akActor, e.BaseItem, e.Item))
+                        akActor.UnequipItem(e.BaseItem, true, true)
+                    EndIf
+                    processedItems.Add(e.BaseItem)
+                EndIf
+            EndIf
+            slotIndex += 1
+        EndWhile
+        pass += 1
     EndWhile
 EndFunction
 
@@ -231,10 +312,12 @@ EndFunction
 
 Function TransferNonWornEquipmentAfterDeathGlobal(Actor akActor, Actor clone, EquippedItem[] cloneWornEquipment) Global
     Int slotIndex = cloneWornEquipment.Length - 1
+    Form[] processedItems = new Form[0]
     While (slotIndex >= 0) ; use reverse precedence high-to-low for removing items
         EquippedItem e = cloneWornEquipment[slotIndex]
-        If (e.BaseItem != None)
+        If (e.BaseItem != None && processedItems.Find(e.BaseItem) < 0)
             akActor.RemoveItem(e.BaseItem, 1, true, None)
+            processedItems.Add(e.BaseItem)
         EndIf
         slotIndex -= 1
     EndWhile

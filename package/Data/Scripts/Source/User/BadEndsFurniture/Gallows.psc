@@ -5,7 +5,6 @@
 Scriptname BadEndsFurniture:Gallows extends ObjectReference
 
 ActorValue Property Paralysis Auto Const Mandatory
-Armor Property NooseCollarArmor Auto Const Mandatory
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 Keyword Property GallowsLink Auto Const Mandatory
 Keyword Property PlayerSelectVictimLink Auto Const Mandatory
@@ -22,9 +21,11 @@ Actor _victim
 Actor _clone
 Library:EquippedItem[] _cloneEquipment
 Int _cloneWristRopesSlotIndex
+Int _cloneNooseCollarSlotIndex
 Int _lifeIdleIndex
 Bool _handlingCellAttach
 Bool _handlingDeferredKill
+Int _version
 
 ;
 ; Must be set to an array of idles that will play sequentially.
@@ -188,9 +189,11 @@ Event OnBeginState(string asOldState)
     EndIf
     _cloneEquipment = None
     _cloneWristRopesSlotIndex = -1
+    _cloneNooseCollarSlotIndex = -1
     _lifeIdleIndex = 0
     _handlingCellAttach = false
     _handlingDeferredKill = false
+    _version = 1
     BlockActivation(false)
 EndEvent
 
@@ -322,11 +325,13 @@ Function Advance()
     EndIf
     _clone = Library.CreateNakedClone(_victim, Victims)
     _clone.PlayIdle(DeadIdle)
-    _cloneEquipment = Library.CloneWornArmor(_victim, _clone)
-    If (!Library.SoftDependencies.IsWearingWristRestraints(_clone))
-        _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment) ; ignore returned armor
+    _cloneEquipment = Library.CloneWornArmor(_victim, _clone, false)
+    If (!Library.SoftDependencies.IsWearingWristRestraints(_victim))
+        _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment, false)
     EndIf
-    _clone.EquipItem(NooseCollarArmor, true, true)
+    _cloneNooseCollarSlotIndex = Library.AddNooseCollarRopeToEquipment(_clone, _cloneEquipment, false)
+    Library.RestoreWornEquipment(_clone, _cloneEquipment, false)
+    Utility.Wait(0.1)
     _clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
     GotoState("LifeVictim")
 EndFunction
@@ -428,17 +433,18 @@ EndEvent
 Event OnCellAttach()
     _handlingCellAttach = true
     If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
         FixClonePosition()
         StartTimer(300, TimerFixClonePosition)
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
-        _clone.EquipItem(NooseCollarArmor, true, true)
+        Library.RestoreWornEquipment(_clone, _cloneEquipment, true)
+        Utility.Wait(0.1)
+        _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
     EndIf
     _handlingCellAttach = false
 EndEvent
 
 Event OnCellDetach()
     CancelTimer(TimerFixClonePosition)
+    Library.UnequipWornEquipment(_clone, _cloneEquipment, true)
 EndEvent
 
 Int Function GetGallowsState()
@@ -597,10 +603,9 @@ Event OnBeginState(string asOldState)
     _clone.AddKeyword(VATSRestrictedTargetKeyword)
     _clone.SetOverrideVoiceType(NpcNoLines)
     If (GetParentCell().IsAttached())
+        _clone.PlayIdle(DeadIdle)
+        Utility.Wait(0.25)
         _clone.SetUnconscious(true)
-        If (_handlingDeferredKill)
-            _clone.PlayIdle(DeadIdle)
-        EndIf
     Else
         _clone.StopTranslation()
         _clone.MoveTo(Self, DX, DY, DZ, false)
@@ -642,22 +647,55 @@ Event OnWorkshopObjectMoved(ObjectReference akReference)
 EndEvent
 
 Event OnCellAttach()
-    _handlingCellAttach = true
-    If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-        _clone.SetOverrideVoiceType(NpcNoLines)
-        _clone.SetUnconscious(false)
-        _clone.PlayIdle(DeadIdle)
-        FixClonePosition()
-        StartTimer(300, TimerFixClonePosition)
-        Library.RestoreWornEquipment(_clone, _cloneEquipment)
-        _clone.EquipItem(NooseCollarArmor, true, true)
-        _clone.SetUnconscious(true)
-    EndIf
-    _handlingCellAttach = false
+        _handlingCellAttach = true
+        If (_version < 1) ; upgrade gallows on cell attach if necessary
+            Int slotIndex = 0
+            Armor[] foundArmor = new Armor[0]
+            While (slotIndex < _cloneEquipment.Length)
+                Library:EquippedItem e = _cloneEquipment[slotIndex]
+                Armor baseArmor = e.BaseItem as Armor
+                If (baseArmor != None)
+                    Int existingIndex = foundArmor.Find(baseArmor)
+                    If (existingIndex < 0)
+                        If (baseArmor != None && Library.SoftDependencies.IsSpecialItem(baseArmor))
+                            e.IsSpecialitem = true
+                        EndIf
+                    Else
+                        e.Item = _cloneEquipment[existingIndex].Item
+                        e.IsSpecialItem = _cloneEquipment[existingIndex].IsSpecialItem
+                    EndIf
+                    foundArmor.Add(baseArmor)
+                Else
+                    foundArmor.Add(Library.NooseCollarArmor) ; because None is causing issues
+                EndIf
+                slotIndex += 1
+            EndWhile
+            If (_cloneWristRopesSlotIndex < 0 && !Library.SoftDependencies.IsWearingWristRestraints(_clone))
+                _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment, false)
+            EndIf
+            If (_cloneNooseCollarSlotIndex == 0)
+                _cloneNooseCollarSlotIndex = Library.AddNooseCollarRopeToEquipment(_clone, _cloneEquipment, false)
+            EndIf
+            Library.UnequipWornEquipment(_clone, _cloneEquipment, true)
+            _version = 1
+        EndIf
+        If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
+            _clone.SetOverrideVoiceType(NpcNoLines)
+            _clone.SetUnconscious(false)
+            FixClonePosition()
+            StartTimer(300, TimerFixClonePosition)
+            Library.RestoreWornEquipment(_clone, _cloneEquipment, true)
+            Utility.Wait(0.1)
+            _clone.PlayIdle(DeadIdle)
+            Utility.Wait(0.25)
+            _clone.SetUnconscious(true)
+        EndIf
+        _handlingCellAttach = false
 EndEvent
 
 Event OnCellDetach()
     CancelTimer(TimerFixClonePosition)
+    Library.UnequipWornEquipment(_clone, _cloneEquipment, true)
 EndEvent
 
 Int Function GetGallowsState()
@@ -701,8 +739,12 @@ Bool Function CutNoose()
             _clone.RemoveItem(e.BaseItem, 1, true, None)
             e.BaseItem = None
         EndIf
-        _clone.UnequipItem(NooseCollarArmor, true, true)
-        _clone.RemoveItem(NooseCollarArmor, 1, true, None)
+        If (_cloneNooseCollarSlotIndex >= 0)
+            Library:EquippedItem e = _cloneEquipment[_cloneNooseCollarSlotIndex]
+            _clone.UnequipItem(e.BaseItem, true, true)
+            _clone.RemoveItem(e.BaseItem, 1, true, None)
+            e.BaseItem = None
+        EndIf
         Library.TransferNonWornEquipmentAfterDeath(_victim, _clone, _cloneEquipment)
         _clone.BlockActivation(false)
         _clone.SetGhost(false)

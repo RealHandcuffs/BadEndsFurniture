@@ -6,7 +6,7 @@ Scriptname BadEndsFurniture:Installer extends ReferenceAlias
 BadEndsFurniture:Library Property Library Auto Const Mandatory
 Perk Property ActivationPerk Auto Const Mandatory
 
-String Property DetailedVersion = "0.1 beta 3" AutoReadOnly ; user version string, will change with every new version
+String Property DetailedVersion = "0.1 beta 4" AutoReadOnly ; user version string, will change with every new version
 String Property InstalledVersion = "" Auto
 Bool Property InstallerWorking = false Auto
 
