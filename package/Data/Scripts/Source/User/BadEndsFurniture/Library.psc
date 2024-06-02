@@ -9,6 +9,7 @@ ActorBase Property CloneHumanGhoul Auto Const
 Armor Property NooseCollarArmor Auto Const Mandatory
 Armor[] Property WristRopeArmorArray Auto Const Mandatory
 FormList Property RaceHumanGhoulList Auto Const Mandatory
+Keyword Property ImmuneToHoldupKeyword Auto Const Mandatory
 LeveledActor Property TemplateCloneHumanGhoul Auto Const
 ObjectReference Property WorkshopHoldingCellMarker Auto Const Mandatory
 
@@ -44,7 +45,7 @@ EndFunction
 ; create a naked clone of an actor, the clone will end up as an invisible (alpha = 0.0) ghost in a translation
 Actor Function CreateNakedClone(Actor akActor, RefCollectionAlias refCollectionAliasToAdd = None)
     Actor clone = CreateInvisibleClone(akActor, refCollectionAliasToAdd)
-    Return SetUpAdvancedClonePropertiesGlobal(akActor, clone, SoftDependencies)
+    Return SetUpAdvancedClonePropertiesGlobal(akActor, clone, SoftDependencies, ImmuneToHoldupKeyword)
 EndFunction
 
 Actor Function CreateInvisibleClone(Actor akActor, RefCollectionAlias refCollectionAliasToAdd)
@@ -91,13 +92,14 @@ Actor Function CreateInvisibleClone(Actor akActor, RefCollectionAlias refCollect
     Return clone
 EndFunction
 
-Actor Function SetUpAdvancedClonePropertiesGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps) Global
+Actor Function SetUpAdvancedClonePropertiesGlobal(Actor akActor, Actor clone, BadEndsFurniture:SoftDependencies sdeps, Keyword immuneToHoldupKeyword) Global
     clone.RemoveAllItems()
     sdeps.PrepareCloneForAnimation(akActor, clone)
     String actorDisplayName = akActor.GetDisplayName()
     If (clone.GetDisplayName() != actorDisplayName)
         LL_FourPlay.ObjectReferenceSetSimpleDisplayName(clone, actorDisplayName)
     EndIf
+    clone.AddKeyword(immuneToHoldupKeyword)
     Return clone
 EndFunction
 

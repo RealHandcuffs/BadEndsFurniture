@@ -331,7 +331,7 @@ Function Advance()
     EndIf
     _cloneNooseCollarSlotIndex = Library.AddNooseCollarRopeToEquipment(_clone, _cloneEquipment, false)
     Library.RestoreWornEquipment(_clone, _cloneEquipment, false)
-    Utility.Wait(0.1)
+    Utility.Wait(0.25)
     _clone.SetLinkedRef(Self, GallowsLink) ; for activation perk
     GotoState("LifeVictim")
 EndFunction
@@ -436,7 +436,7 @@ Event OnCellAttach()
         FixClonePosition()
         StartTimer(300, TimerFixClonePosition)
         Library.RestoreWornEquipment(_clone, _cloneEquipment, true)
-        Utility.Wait(0.1)
+        Utility.Wait(0.25)
         _clone.PlayIdle(LifeIdles[_lifeIdleIndex])
     EndIf
     _handlingCellAttach = false
@@ -647,50 +647,51 @@ Event OnWorkshopObjectMoved(ObjectReference akReference)
 EndEvent
 
 Event OnCellAttach()
-        _handlingCellAttach = true
-        If (_version < 1) ; upgrade gallows on cell attach if necessary
-            Int slotIndex = 0
-            Armor[] foundArmor = new Armor[0]
-            While (slotIndex < _cloneEquipment.Length)
-                Library:EquippedItem e = _cloneEquipment[slotIndex]
-                Armor baseArmor = e.BaseItem as Armor
-                If (baseArmor != None)
-                    Int existingIndex = foundArmor.Find(baseArmor)
-                    If (existingIndex < 0)
-                        If (baseArmor != None && Library.SoftDependencies.IsSpecialItem(baseArmor))
-                            e.IsSpecialitem = true
-                        EndIf
-                    Else
-                        e.Item = _cloneEquipment[existingIndex].Item
-                        e.IsSpecialItem = _cloneEquipment[existingIndex].IsSpecialItem
+    _handlingCellAttach = true
+    If (_version < 1) ; upgrade gallows on cell attach if necessary
+        Int slotIndex = 0
+        Armor[] foundArmor = new Armor[0]
+        While (slotIndex < _cloneEquipment.Length)
+            Library:EquippedItem e = _cloneEquipment[slotIndex]
+            Armor baseArmor = e.BaseItem as Armor
+            If (baseArmor != None)
+                Int existingIndex = foundArmor.Find(baseArmor)
+                If (existingIndex < 0)
+                    If (baseArmor != None && Library.SoftDependencies.IsSpecialItem(baseArmor))
+                        e.IsSpecialitem = true
                     EndIf
-                    foundArmor.Add(baseArmor)
                 Else
-                    foundArmor.Add(Library.NooseCollarArmor) ; because None is causing issues
+                    e.Item = _cloneEquipment[existingIndex].Item
+                    e.IsSpecialItem = _cloneEquipment[existingIndex].IsSpecialItem
                 EndIf
-                slotIndex += 1
-            EndWhile
-            If (_cloneWristRopesSlotIndex < 0 && !Library.SoftDependencies.IsWearingWristRestraints(_clone))
-                _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment, false)
+                foundArmor.Add(baseArmor)
+            Else
+                foundArmor.Add(Library.NooseCollarArmor) ; because None is causing issues
             EndIf
-            If (_cloneNooseCollarSlotIndex == 0)
-                _cloneNooseCollarSlotIndex = Library.AddNooseCollarRopeToEquipment(_clone, _cloneEquipment, false)
-            EndIf
-            Library.UnequipWornEquipment(_clone, _cloneEquipment, true)
-            _version = 1
+            slotIndex += 1
+        EndWhile
+        If (_cloneWristRopesSlotIndex < 0 && !Library.SoftDependencies.IsWearingWristRestraints(_clone))
+            _cloneWristRopesSlotIndex = Library.AddWristRopesToEquipment(_clone, _cloneEquipment, false)
         EndIf
-        If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
-            _clone.SetOverrideVoiceType(NpcNoLines)
-            _clone.SetUnconscious(false)
-            FixClonePosition()
-            StartTimer(300, TimerFixClonePosition)
-            Library.RestoreWornEquipment(_clone, _cloneEquipment, true)
-            Utility.Wait(0.1)
-            _clone.PlayIdle(DeadIdle)
-            Utility.Wait(0.25)
-            _clone.SetUnconscious(true)
+        If (_cloneNooseCollarSlotIndex == 0)
+            _cloneNooseCollarSlotIndex = Library.AddNooseCollarRopeToEquipment(_clone, _cloneEquipment, false)
         EndIf
-        _handlingCellAttach = false
+        Library.UnequipWornEquipment(_clone, _cloneEquipment, true)
+        _clone.AddKeyword(Library.ImmuneToHoldupKeyword)
+        _version = 1
+    EndIf
+    If (WaitFor3DLoad() && _clone.WaitFor3DLoad())
+        _clone.SetOverrideVoiceType(NpcNoLines)
+        _clone.SetUnconscious(false)
+        FixClonePosition()
+        StartTimer(300, TimerFixClonePosition)
+        Library.RestoreWornEquipment(_clone, _cloneEquipment, true)
+        Utility.Wait(0.25)
+        _clone.PlayIdle(DeadIdle)
+        Utility.Wait(0.25)
+        _clone.SetUnconscious(true)
+    EndIf
+    _handlingCellAttach = false
 EndEvent
 
 Event OnCellDetach()
