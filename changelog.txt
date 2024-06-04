@@ -12,3 +12,8 @@ Initial release with hanging.
 - Add support for Kziid Fetish Toolset: Both restraints and gags will now work correctly, while the victim is struggling and when the victim hanging dead
 - Make victims immune to intimidation perks
 - Fix various compatibility issues
+
+0.1 Beta 5
+- Try to fix missing expressions of victims in loaded cells when loading game
+- Fix duplication of Kziid Fetish Toolset devices
+- Be more reliable about skipping wrist ropes when victim is alreay tied

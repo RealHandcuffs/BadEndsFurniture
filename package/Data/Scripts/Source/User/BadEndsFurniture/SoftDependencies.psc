@@ -12,11 +12,10 @@ Bool Property KziidFetishToolsetInstalled = False Auto
 Group Plugins
     String Property RealHandcuffsEsp = "RealHandcuffs.esp" AutoReadOnly
     String Property DeviousDevicesEsm = "Devious Devices.esm" AutoReadOnly
-    String Property KziidFetishToolset = "KziitdFetishToolset.esm" AutoReadOnly
+    String Property KziidFetishToolsetEsm = "KziitdFetishToolset.esm" AutoReadOnly
 EndGroup
 
 Group RealHandcuffs
-    Quest Property RH_MainQuest = None Auto
     Keyword Property RH_NoPackage = None Auto
     Keyword Property RH_Restraint = None Auto
     MiscObject Property RH_NpcToken = None Auto
@@ -24,6 +23,7 @@ EndGroup
 
 Group DeviousDevices
     Keyword Property DD_kw_ItemType_WristCuffs = None Auto
+    Keyword Property DD_kw_RenderedItem = None Auto
 EndGroup
 
 Group KziidFetishToolset
@@ -56,7 +56,7 @@ Function Refresh()
         UpdateDeviousDevices()
     EndIf
     Bool oldKziidFetishToolsetInstalled = KziidFetishToolsetInstalled
-    KziidFetishToolsetInstalled = Game.IsPluginInstalled(KziidFetishToolset)
+    KziidFetishToolsetInstalled = Game.IsPluginInstalled(KziidFetishToolsetEsm)
     If (KziidFetishToolsetInstalled && !oldKziidFetishToolsetInstalled)
         UpdateKziidFetishToolset()
     EndIf
@@ -67,7 +67,6 @@ Function UpdateRealHandcuffs()
     If (!boundHandsGenericFurnitureList.HasForm(Gallows))
         boundHandsGenericFurnitureList.AddForm(Gallows)
     EndIf
-    RH_MainQuest = Game.GetFormFromFile(0x000F99, RealHandcuffsEsp) as Quest
     RH_NoPackage = Game.GetFormFromFile(0x000860, RealHandcuffsEsp) as Keyword
     RH_Restraint = Game.GetFormFromFile(0x000009, RealHandcuffsEsp) as Keyword
     RH_NpcToken =  Game.GetFormFromFile(0x000803, RealHandcuffsEsp) as MiscObject
@@ -75,10 +74,11 @@ EndFunction
 
 Function UpdateDeviousDevices()
     DD_kw_ItemType_WristCuffs = Game.GetFormFromFile(0x01196C, DeviousDevicesEsm) as Keyword
+    DD_kw_RenderedItem = Game.GetFormFromFile(0x004C5C, DeviousDevicesEsm) as Keyword
 EndFunction
 
 Function UpdateKziidFetishToolset()
-    Quest KZEB_MainQuest = Game.GetFormFromFile(0x00924A, KziidFetishToolset) as Quest
+    Quest KZEB_MainQuest = Game.GetFormFromFile(0x00924A, KziidFetishToolsetEsm) as Quest
     KZEB_API = KZEB_MainQuest.CastAs("KZEB:KZEB_API")
     KZEB_Device = KZEB_API.GetPropertyValue("KZEB_Device") as Keyword
     KZEB_DeviceType_Boundhands = KZEB_API.GetPropertyValue("KZEB_DeviceType_BoundHands") as Keyword
@@ -98,6 +98,9 @@ EndFunction
 ;
 Bool Function IsSpecialItem(Armor baseItem)
     If (RealHandcuffsInstalled && baseItem.HasKeyword(RH_Restraint))
+        Return true
+    EndIf
+    If (DeviousDevicesInstalled && baseItem.HasKeyword(DD_kw_RenderedItem))
         Return true
     EndIf
     If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device))
@@ -120,14 +123,10 @@ Bool Function EquipSpecialItem(Actor akActor, Form baseItem, ObjectReference ite
             Return true
         EndIf
     EndIf
-    If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device))
+    If (KziidFetishToolsetInstalled && baseItem.HasKeyword(KZEB_Device) && item != None)
         Var[] args = new Var[4]
         args[0] = akActor
-        If (item != None)
-            args[1] = item
-        Else
-            args[1] = baseItem
-        EndIf
+        args[1] = (item as Form)
         args[2] = true
         args[3] = true
         KZEB_API.CallFunction("EquipDevice", args)
@@ -168,31 +167,32 @@ Function AddItemsToKeep(Form[] itemsToKeep)
 EndFunction
 
 ;
-; Check if an actor is wearing wrist restraints.
+; Check if the worn equipment is containing wrist restraints.
 ;
-Bool Function IsWearingWristRestraints(Actor akActor)
-    If (RealHandcuffsInstalled)
-        If (AreWristsBoundRealHandcuffsGlobal(akActor, RH_MainQuest))
-            Return true
+Bool Function IsContainingWristRestraints(Library:EquippedItem[] wornEquipment)
+    Int slotIndex = 0
+    Form[] foundSpecialItems = new Form[0]
+    While (slotIndex < wornEquipment.Length)
+        Library:EquippedItem e = wornEquipment[slotIndex]
+        If (e.IsSpecialItem && foundSpecialItems.Find(e.BaseItem) < 0)
+            If (RealHandcuffsInstalled)
+                ScriptObject restraint = e.Item.CastAs("RealHandcuffs:RestraintBase")
+                If (restraint != None)
+                    String impact = restraint.CallFunction("GetImpact", new Var[0]) as String
+                    If (impact == "HandsBoundBehindBack")
+                        Return true
+                    EndIf
+                EndIf
+            EndIf
+            If (DeviousDevicesInstalled && e.BaseItem.HasKeyword(DD_kw_ItemType_WristCuffs))
+                Return true
+            EndIf
+            If (KziidFetishToolsetInstalled && e.BaseItem.HasKeyword(KZEB_DeviceType_Boundhands))
+                Return true
+            EndIf
+            foundSpecialItems.Add(e.BaseItem)
         EndIf
-    EndIf
-    If (DeviousDevicesInstalled)
-        If (akActor.WornHasKeyword(DD_kw_ItemType_WristCuffs))
-            Return true
-        EndIf
-    EndIf
-    If (KziidFetishToolsetInstalled)
-        If (akActor.WornHasKeyword(KZEB_DeviceType_Boundhands))
-            Return true
-        EndIf
-    EndIf
-    Return false
-EndFunction
-
-Bool Function AreWristsBoundRealHandcuffsGlobal(Actor akActor, Quest thirdPartyApiQuest) Global
-    RealHandcuffs:ThirdPartyApi api = thirdPartyApiQuest as RealHandcuffs:ThirdPartyApi
-    If (api.ApiVersion() >= 6)
-        Return api.HasHandsBoundBehindBack(akActor)
-    EndIf
+        slotIndex += 1
+    EndWhile
     Return false
 EndFunction

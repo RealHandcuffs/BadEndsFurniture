@@ -133,18 +133,23 @@ EquippedItem[] Function CloneWornArmorGlobal(Actor akActor, Actor clone, BadEnds
             Int existingIndex = foundArmor.Find(baseItem)
             If (existingIndex < 0)
                 ObjectMod[] objectMods = akActor.GetWornItemMods(slotIndex)
-                If (objectMods.Length > 0)
+                e.IsSpecialItem = sdeps.IsSpecialItem(baseItem)
+                If (e.IsSpecialItem || objectMods.Length > 0)
                     ObjectReference item = clone.PlaceAtMe(baseItem, 1, false, true, false) ; initially disabled
-                    item.RemoveAllMods()
-                    Int modIndex = 0
-                    While (modIndex < objectMods.Length)
-                        item.AttachMod(objectMods[modIndex])
-                        modIndex += 1
-                    EndWhile
+                    If (objectMods.Length > 0)
+                        item.RemoveAllMods()
+                        Int modIndex = 0
+                        While (modIndex < objectMods.Length)
+                            item.AttachMod(objectMods[modIndex])
+                            modIndex += 1
+                        EndWhile
+                    EndIf
+                    item.EnableNoWait()
                     clone.AddItem(item, 1, true)
                     e.Item = item
+                Else
+                    clone.AddItem(e.BaseItem)
                 EndIf
-                e.IsSpecialItem = sdeps.IsSpecialItem(baseItem)
             Else
                 e.Item = clonedArmor[existingIndex].Item
                 e.IsSpecialItem = clonedArmor[existingIndex].IsSpecialItem
@@ -211,12 +216,31 @@ EndFunction
 
 ; restore the worn armor of an actor, necessary when the cell has been loaded or when it has not been restored when cloning worn armor
 Function RestoreWornEquipment(Actor akActor, EquippedItem[] wornEquipment, Bool cleanUp, ObjectReference akOtherContainer = None)
-    RestoreWornEquipmentGlobal(akActor, wornEquipment, SoftDependencies, akOtherContainer)
+    RestoreWornEquipmentGlobal(akActor, wornEquipment, SoftDependencies, cleanUp, akOtherContainer)
 EndFunction
 
 Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment, BadEndsFurniture:SoftDependencies sdeps, Bool cleanUp, ObjectReference akOtherContainer = None) Global
     Form[] baseItemsToKeep = new Form[0]
     If (cleanUp)
+        Int slotIndex = wornEquipment.Length - 1
+        While (slotIndex >= 0)
+            EquippedItem e = wornEquipment[slotIndex]
+            If (e.BaseItem != None && baseItemsToKeep.Find(e.BaseItem) < 0)
+                Int count = akActor.GetItemCount(e.BaseItem)
+                If (count > 1)
+                    If (e.Item != None)
+                        akActor.UnequipItem(e.BaseItem, true, true)
+                        e.Item.Drop()
+                        akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
+                        akActor.AddItem(e.Item, 1, true)
+                    Else
+                        akActor.RemoveItem(e.BaseItem, count-1, true, akOtherContainer)
+                    EndIf
+                EndIf
+                baseItemsToKeep.Add(e.BaseItem)
+            EndIf
+            slotIndex -= 1
+        EndWhile
         sdeps.AddItemsToKeep(baseItemsToKeep)
     Endif
     Int pass = 0 ; first pass: regular items, second pass: special items
@@ -233,20 +257,6 @@ Function RestoreWornEquipmentGlobal(Actor akActor, EquippedItem[] wornEquipment,
                 Bool isSpecialItem = e.IsSpecialItem
                 hasSpecialItems = hasSpecialItems || isSpecialItem
                 If ((pass == 0 && !isSpecialItem || pass == 1 && isSpecialItem) && processedItems.Find(e.BaseItem) < 0)
-                    If (cleanUp)
-                        Int count = akActor.GetItemCount(e.BaseItem)
-                        If (count > 1)
-                            If (e.Item != None)
-                                akActor.UnequipItem(e.BaseItem, true, true)
-                                e.Item.Drop()
-                                akActor.RemoveItem(e.BaseItem, -1, true, akOtherContainer)
-                                akActor.AddItem(e.Item, 1, true)
-                            Else
-                                akActor.RemoveItem(e.BaseItem, count - 1, true, akOtherContainer)
-                            EndIf
-                        EndIf
-                        baseItemsToKeep.Add(e.BaseItem)
-                    Endif
                     If (!isSpecialItem || !sdeps.EquipSpecialItem(akActor, e.BaseItem, e.Item))
                         akActor.EquipItem(e.BaseItem, true, true)
                     EndIf
